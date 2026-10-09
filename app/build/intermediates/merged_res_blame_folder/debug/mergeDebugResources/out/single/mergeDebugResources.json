@@ -1,0 +1,78 @@
+[
+    {
+        "merged": "com.bkp.adbmobile.app-debug-4:/layout_activity_main.xml.flat",
+        "source": "com.bkp.adbmobile.app-main-6:/layout/activity_main.xml"
+    },
+    {
+        "merged": "com.bkp.adbmobile.app-debug-4:/color_segment_text.xml.flat",
+        "source": "com.bkp.adbmobile.app-main-6:/color/segment_text.xml"
+    },
+    {
+        "merged": "com.bkp.adbmobile.app-debug-4:/drawable_bg_segment.xml.flat",
+        "source": "com.bkp.adbmobile.app-main-6:/drawable/bg_segment.xml"
+    },
+    {
+        "merged": "com.bkp.adbmobile.app-debug-4:/drawable_bg_console.xml.flat",
+        "source": "com.bkp.adbmobile.app-main-6:/drawable/bg_console.xml"
+    },
+    {
+        "merged": "com.bkp.adbmobile.app-debug-4:/drawable_bg_status_error.xml.flat",
+        "source": "com.bkp.adbmobile.app-main-6:/drawable/bg_status_error.xml"
+    },
+    {
+        "merged": "com.bkp.adbmobile.app-debug-4:/drawable_bg_segment_track.xml.flat",
+        "source": "com.bkp.adbmobile.app-main-6:/drawable/bg_segment_track.xml"
+    },
+    {
+        "merged": "com.bkp.adbmobile.app-debug-4:/drawable_bg_button_outline.xml.flat",
+        "source": "com.bkp.adbmobile.app-main-6:/drawable/bg_button_outline.xml"
+    },
+    {
+        "merged": "com.bkp.adbmobile.app-debug-4:/drawable_bg_badge.xml.flat",
+        "source": "com.bkp.adbmobile.app-main-6:/drawable/bg_badge.xml"
+    },
+    {
+        "merged": "com.bkp.adbmobile.app-debug-4:/drawable_bg_card.xml.flat",
+        "source": "com.bkp.adbmobile.app-main-6:/drawable/bg_card.xml"
+    },
+    {
+        "merged": "com.bkp.adbmobile.app-debug-4:/drawable_ic_terminal.xml.flat",
+        "source": "com.bkp.adbmobile.app-main-6:/drawable/ic_terminal.xml"
+    },
+    {
+        "merged": "com.bkp.adbmobile.app-debug-4:/color_button_outline_text.xml.flat",
+        "source": "com.bkp.adbmobile.app-main-6:/color/button_outline_text.xml"
+    },
+    {
+        "merged": "com.bkp.adbmobile.app-debug-4:/drawable_bg_status_info.xml.flat",
+        "source": "com.bkp.adbmobile.app-main-6:/drawable/bg_status_info.xml"
+    },
+    {
+        "merged": "com.bkp.adbmobile.app-debug-4:/drawable_ic_launcher_foreground.xml.flat",
+        "source": "com.bkp.adbmobile.app-main-6:/drawable/ic_launcher_foreground.xml"
+    },
+    {
+        "merged": "com.bkp.adbmobile.app-debug-4:/mipmap_ic_launcher.xml.flat",
+        "source": "com.bkp.adbmobile.app-main-6:/mipmap/ic_launcher.xml"
+    },
+    {
+        "merged": "com.bkp.adbmobile.app-debug-4:/drawable_bg_button_primary.xml.flat",
+        "source": "com.bkp.adbmobile.app-main-6:/drawable/bg_button_primary.xml"
+    },
+    {
+        "merged": "com.bkp.adbmobile.app-debug-4:/drawable_bg_input.xml.flat",
+        "source": "com.bkp.adbmobile.app-main-6:/drawable/bg_input.xml"
+    },
+    {
+        "merged": "com.bkp.adbmobile.app-debug-4:/drawable_bg_code.xml.flat",
+        "source": "com.bkp.adbmobile.app-main-6:/drawable/bg_code.xml"
+    },
+    {
+        "merged": "com.bkp.adbmobile.app-debug-4:/mipmap-anydpi-v26_ic_launcher.xml.flat",
+        "source": "com.bkp.adbmobile.app-main-6:/mipmap-anydpi-v26/ic_launcher.xml"
+    },
+    {
+        "merged": "com.bkp.adbmobile.app-debug-4:/drawable_bg_status_success.xml.flat",
+        "source": "com.bkp.adbmobile.app-main-6:/drawable/bg_status_success.xml"
+    }
+]
