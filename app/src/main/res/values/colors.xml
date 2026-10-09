@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="primary">#0B3C6E</color>
+    <color name="primary_dark">#082B50</color>
+    <color name="primary_tint">#E8F0FA</color>
+    <color name="on_primary_muted">#C7D9EE</color>
+    <color name="background">#F3F5F8</color>
+    <color name="surface">#FFFFFF</color>
+    <color name="text_primary">#1B2430</color>
+    <color name="text_secondary">#5B6675</color>
+    <color name="divider">#DDE2E8</color>
+    <color name="segment_track">#E9EDF2</color>
+    <color name="disabled">#A9B4C2</color>
+    <color name="code_bg">#EEF2F7</color>
+    <color name="success">#1E7F4F</color>
+    <color name="success_bg">#E6F4EC</color>
+    <color name="error">#B42318</color>
+    <color name="error_bg">#FDECEA</color>
+    <color name="info">#0B3C6E</color>
+    <color name="info_bg">#E8F0FA</color>
+    <color name="console_bg">#0F1720</color>
+    <color name="console_text">#C9D4E0</color>
+</resources>

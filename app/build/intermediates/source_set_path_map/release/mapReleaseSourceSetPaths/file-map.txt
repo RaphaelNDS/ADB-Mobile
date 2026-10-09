@@ -1,0 +1,7 @@
+com.bkp.adbmobile.app-pngs-0 C:\Users\Dev\Documents\Projetos\ADB Mobile\app\build\generated\res\pngs\release
+com.bkp.adbmobile.app-resValues-1 C:\Users\Dev\Documents\Projetos\ADB Mobile\app\build\generated\res\resValues\release
+com.bkp.adbmobile.app-packageReleaseResources-2 C:\Users\Dev\Documents\Projetos\ADB Mobile\app\build\intermediates\incremental\release\packageReleaseResources\merged.dir
+com.bkp.adbmobile.app-packageReleaseResources-3 C:\Users\Dev\Documents\Projetos\ADB Mobile\app\build\intermediates\incremental\release\packageReleaseResources\stripped.dir
+com.bkp.adbmobile.app-release-4 C:\Users\Dev\Documents\Projetos\ADB Mobile\app\build\intermediates\merged_res\release\mergeReleaseResources
+com.bkp.adbmobile.app-main-5 C:\Users\Dev\Documents\Projetos\ADB Mobile\app\src\main\res
+com.bkp.adbmobile.app-release-6 C:\Users\Dev\Documents\Projetos\ADB Mobile\app\src\release\res

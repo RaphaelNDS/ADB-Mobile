@@ -1,0 +1,330 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/background"
+    android:orientation="vertical">
+
+    <!-- Barra superior -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="@color/primary"
+        android:elevation="4dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingStart="20dp"
+        android:paddingTop="14dp"
+        android:paddingEnd="20dp"
+        android:paddingBottom="14dp">
+
+        <ImageView
+            android:layout_width="36dp"
+            android:layout_height="36dp"
+            android:background="@drawable/bg_badge"
+            android:backgroundTint="@color/primary_dark"
+            android:contentDescription="@null"
+            android:padding="7dp"
+            android:src="@drawable/ic_terminal" />
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="12dp"
+            android:layout_weight="1"
+            android:orientation="vertical">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="ADB Mobile"
+                android:textColor="@android:color/white"
+                android:textSize="19sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Configuração de dispositivos via ADB"
+                android:textColor="@color/on_primary_muted"
+                android:textSize="12sp" />
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/version"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textColor="@color/on_primary_muted"
+            android:textSize="12sp" />
+    </LinearLayout>
+
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:fillViewport="true">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:padding="16dp">
+
+            <!-- Comando -->
+            <LinearLayout style="@style/Card">
+
+                <TextView
+                    style="@style/Overline"
+                    android:text="Comando configurado" />
+
+                <TextView
+                    android:id="@+id/command"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:background="@drawable/bg_code"
+                    android:fontFamily="monospace"
+                    android:padding="10dp"
+                    android:textColor="@color/text_primary"
+                    android:textIsSelectable="true"
+                    android:textSize="13sp" />
+            </LinearLayout>
+
+            <!-- Aparelho alvo -->
+            <LinearLayout style="@style/Card">
+
+                <TextView
+                    style="@style/Overline"
+                    android:layout_marginBottom="8dp"
+                    android:text="Aparelho alvo" />
+
+                <RadioGroup
+                    android:id="@+id/target"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:background="@drawable/bg_segment_track"
+                    android:orientation="horizontal"
+                    android:padding="4dp">
+
+                    <RadioButton
+                        android:id="@+id/targetLocal"
+                        style="@style/Segment"
+                        android:text="Este aparelho" />
+
+                    <RadioButton
+                        android:id="@+id/targetRemote"
+                        style="@style/Segment"
+                        android:text="Outro aparelho" />
+                </RadioGroup>
+
+                <LinearLayout
+                    android:id="@+id/remoteBox"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="14dp"
+                    android:orientation="vertical">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal">
+
+                        <LinearLayout
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_marginEnd="10dp"
+                            android:layout_weight="2"
+                            android:orientation="vertical">
+
+                            <TextView
+                                style="@style/FieldLabel"
+                                android:text="Endereço IP" />
+
+                            <EditText
+                                android:id="@+id/host"
+                                style="@style/Field"
+                                android:hint="192.168.0.50"
+                                android:inputType="textUri" />
+                        </LinearLayout>
+
+                        <LinearLayout
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:orientation="vertical">
+
+                            <TextView
+                                style="@style/FieldLabel"
+                                android:text="Porta de conexão" />
+
+                            <EditText
+                                android:id="@+id/connectPort"
+                                style="@style/Field"
+                                android:hint="5555"
+                                android:inputType="number" />
+                        </LinearLayout>
+                    </LinearLayout>
+
+                    <TextView
+                        style="@style/Body"
+                        android:layout_marginTop="10dp"
+                        android:text="Android 11+: use o IP e a porta exibidos em &quot;Depuração por Wi-Fi&quot; no aparelho alvo (a porta muda quando a depuração reinicia) e faça o pareamento uma vez.\nAndroid 10 ou anterior: execute &quot;adb tcpip 5555&quot; uma vez pelo PC, use a porta 5555 e autorize a depuração na tela do alvo." />
+                </LinearLayout>
+            </LinearLayout>
+
+            <!-- 1. Pareamento -->
+            <LinearLayout style="@style/Card">
+
+                <LinearLayout style="@style/CardHeader">
+
+                    <TextView
+                        style="@style/StepBadge"
+                        android:text="1" />
+
+                    <TextView
+                        style="@style/CardTitle"
+                        android:text="Pareamento" />
+
+                    <TextView
+                        style="@style/Overline"
+                        android:text="Somente na 1ª vez" />
+                </LinearLayout>
+
+                <TextView
+                    android:id="@+id/pairingHelp"
+                    style="@style/Body" />
+
+                <Button
+                    android:id="@+id/pairNotification"
+                    style="@style/ButtonOutline"
+                    android:layout_marginTop="14dp"
+                    android:text="Parear via notificação" />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="14dp"
+                    android:orientation="horizontal">
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_marginEnd="10dp"
+                        android:layout_weight="1"
+                        android:orientation="vertical">
+
+                        <TextView
+                            style="@style/FieldLabel"
+                            android:text="Porta de pareamento" />
+
+                        <EditText
+                            android:id="@+id/pairPort"
+                            style="@style/Field"
+                            android:hint="37000"
+                            android:inputType="number" />
+                    </LinearLayout>
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical">
+
+                        <TextView
+                            style="@style/FieldLabel"
+                            android:text="Código (6 dígitos)" />
+
+                        <EditText
+                            android:id="@+id/pairCode"
+                            style="@style/Field"
+                            android:hint="000000"
+                            android:inputType="number"
+                            android:maxLength="6" />
+                    </LinearLayout>
+                </LinearLayout>
+
+                <Button
+                    android:id="@+id/pairManual"
+                    style="@style/ButtonOutline"
+                    android:layout_marginTop="12dp"
+                    android:text="Parear" />
+            </LinearLayout>
+
+            <!-- 2. Execução -->
+            <LinearLayout style="@style/Card">
+
+                <LinearLayout style="@style/CardHeader">
+
+                    <TextView
+                        style="@style/StepBadge"
+                        android:text="2" />
+
+                    <TextView
+                        style="@style/CardTitle"
+                        android:text="Execução" />
+                </LinearLayout>
+
+                <TextView
+                    android:id="@+id/status"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginBottom="14dp"
+                    android:paddingStart="16dp"
+                    android:paddingTop="10dp"
+                    android:paddingEnd="12dp"
+                    android:paddingBottom="10dp"
+                    android:textSize="14sp"
+                    android:textStyle="bold" />
+
+                <Button
+                    android:id="@+id/run"
+                    style="@style/ButtonPrimary"
+                    android:text="Executar comando" />
+
+                <Button
+                    android:id="@+id/read"
+                    style="@style/ButtonOutline"
+                    android:layout_marginTop="10dp"
+                    android:text="Ler valor atual" />
+            </LinearLayout>
+
+            <!-- Registro -->
+            <LinearLayout style="@style/Card">
+
+                <LinearLayout
+                    style="@style/CardHeader"
+                    android:layout_marginBottom="8dp">
+
+                    <TextView
+                        style="@style/Overline"
+                        android:layout_width="0dp"
+                        android:layout_weight="1"
+                        android:text="Registro de atividades" />
+
+                    <TextView
+                        android:id="@+id/clearLog"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:background="?android:attr/selectableItemBackground"
+                        android:padding="4dp"
+                        android:text="Limpar"
+                        android:textColor="@color/primary"
+                        android:textSize="13sp"
+                        android:textStyle="bold" />
+                </LinearLayout>
+
+                <TextView
+                    android:id="@+id/log"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:background="@drawable/bg_console"
+                    android:fontFamily="monospace"
+                    android:minHeight="120dp"
+                    android:padding="12dp"
+                    android:textColor="@color/console_text"
+                    android:textIsSelectable="true"
+                    android:textSize="12sp" />
+            </LinearLayout>
+        </LinearLayout>
+    </ScrollView>
+</LinearLayout>

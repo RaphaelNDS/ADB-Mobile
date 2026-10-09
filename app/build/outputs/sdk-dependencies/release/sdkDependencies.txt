@@ -1,0 +1,178 @@
+# List of SDK dependencies of this app, this information is also included in an encrypted form in the APK.
+# For more information visit: https://d.android.com/r/tools/dependency-metadata
+
+library {
+  maven_library {
+    groupId: "com.github.MuntashirAkon"
+    artifactId: "libadb-android"
+    version: "3.1.1"
+  }
+  digests {
+    sha256: "\346\374\264\225\242\nP|\244\241%\257\311\305T\3508\250K:\025\373\314)\367\336\257\320\370\213\273X"
+  }
+  repo_index {
+    value: 2
+  }
+}
+library {
+  maven_library {
+    groupId: "androidx.annotation"
+    artifactId: "annotation"
+    version: "1.9.1"
+  }
+  repo_index {
+  }
+}
+library {
+  maven_library {
+    groupId: "androidx.annotation"
+    artifactId: "annotation-jvm"
+    version: "1.9.1"
+  }
+  digests {
+    sha256: "\03649\027\353\362{\251o\344\334R\261\312\327\3752\2678\373\3065[\266\315[;0]r\022\320"
+  }
+  repo_index {
+  }
+}
+library {
+  maven_library {
+    groupId: "org.jetbrains.kotlin"
+    artifactId: "kotlin-stdlib"
+    version: "1.9.24"
+  }
+  digests {
+    sha256: "\205\213\220&\226\332\234\365\205\253\235\230\377\301\302q\"i\202\203T\337\351\020~7\021\260\204\243dh"
+  }
+  repo_index {
+    value: 1
+  }
+}
+library {
+  maven_library {
+    groupId: "org.jetbrains"
+    artifactId: "annotations"
+    version: "13.0"
+  }
+  digests {
+    sha256: "\254\342\241\r\310\342\325\3754\222^\312\300>I\210\262\300\370Qe\f\224\270\316\364\233\241\275\021\024x"
+  }
+  repo_index {
+    value: 1
+  }
+}
+library {
+  maven_library {
+    groupId: "org.bouncycastle"
+    artifactId: "bcprov-jdk15to18"
+    version: "1.81"
+  }
+  digests {
+    sha256: "\016\371\304\331Sg\031\252\241\311*|iM\207\230\037\251\324\326M\331G\234\303\"\240\212\353\274e\036"
+  }
+  repo_index {
+    value: 1
+  }
+}
+library {
+  maven_library {
+    groupId: "com.github.MuntashirAkon.spake2-java"
+    artifactId: "spake2-android"
+    version: "2.2.1"
+  }
+  digests {
+    sha256: "\207\230\373l\004\265\325:c\a\355\224\201\351\257\345c\"z\275N\213\236\221|\205\024\372\205\000q\273"
+  }
+  repo_index {
+    value: 2
+  }
+}
+library {
+  maven_library {
+    groupId: "org.conscrypt"
+    artifactId: "conscrypt-android"
+    version: "2.5.3"
+  }
+  digests {
+    sha256: "U\032\344\343\001\305qv\r\027\221\346G\333n\321\334\261\r4\334\256z\241+g\362 \362\316\230\321"
+  }
+  repo_index {
+    value: 1
+  }
+}
+library {
+  maven_library {
+    groupId: "org.bouncycastle"
+    artifactId: "bcpkix-jdk15to18"
+    version: "1.81"
+  }
+  digests {
+    sha256: "\252 J\f\213_Ud\277+\032\005^%PSK$!{#\366>\244\313v,\220\217\370\021\331"
+  }
+  repo_index {
+    value: 1
+  }
+}
+library {
+  maven_library {
+    groupId: "org.bouncycastle"
+    artifactId: "bcutil-jdk15to18"
+    version: "1.81"
+  }
+  digests {
+    sha256: "\202\374,;\301|\006\246\374N(\267:\337\026\001\240\033\221\251\177{r\300\317\272\272\370\277\037?\347"
+  }
+  repo_index {
+    value: 1
+  }
+}
+library_dependencies {
+  library_dep_index: 1
+  library_dep_index: 5
+  library_dep_index: 6
+}
+library_dependencies {
+  library_index: 1
+  library_dep_index: 2
+}
+library_dependencies {
+  library_index: 2
+  library_dep_index: 3
+}
+library_dependencies {
+  library_index: 3
+  library_dep_index: 4
+}
+library_dependencies {
+  library_index: 6
+  library_dep_index: 1
+}
+library_dependencies {
+  library_index: 8
+  library_dep_index: 9
+}
+library_dependencies {
+  library_index: 9
+  library_dep_index: 5
+}
+module_dependencies {
+  module_name: "base"
+  dependency_index: 0
+  dependency_index: 7
+  dependency_index: 8
+}
+repositories {
+  maven_repo {
+    url: "https://dl.google.com/dl/android/maven2/"
+  }
+}
+repositories {
+  maven_repo {
+    url: "https://repo.maven.apache.org/maven2/"
+  }
+}
+repositories {
+  maven_repo {
+    url: "https://jitpack.io"
+  }
+}
