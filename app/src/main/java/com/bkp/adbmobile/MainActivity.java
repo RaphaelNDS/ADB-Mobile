@@ -4,8 +4,12 @@ import android.Manifest;
 import android.app.Activity;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.database.Cursor;
+import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.provider.DocumentsContract;
+import android.provider.OpenableColumns;
 import android.provider.Settings;
 import android.view.View;
 import android.widget.Button;
@@ -31,6 +35,10 @@ public class MainActivity extends Activity {
 
     private enum Status { INFO, SUCCESS, ERROR }
 
+    private static final int REQUEST_SAVE_LOG = 10;
+    private static final int REQUEST_LOG_FOLDER = 11;
+    private static final String DEFAULT_MONITOR_PACKAGE = "br.com.backupautomacao.kiosk";
+
     private final SimpleDateFormat clock = new SimpleDateFormat("HH:mm:ss", Locale.getDefault());
 
     private SharedPreferences prefs;
@@ -45,6 +53,9 @@ public class MainActivity extends Activity {
     private TextView status;
     private TextView log;
     private Button[] actions;
+    private EditText monitorPackageField;
+    private TextView logFolderLabel;
+    private Button toggleMonitorButton;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -69,7 +80,8 @@ public class MainActivity extends Activity {
         Button pairManual = findViewById(R.id.pairManual);
         Button run = findViewById(R.id.run);
         Button read = findViewById(R.id.read);
-        actions = new Button[]{notificationPairing, pairManual, run, read};
+        Button saveLog = findViewById(R.id.saveLog);
+        actions = new Button[]{notificationPairing, pairManual, run, read, saveLog};
 
         hostField.setText(prefs.getString("host", ""));
         connectPortField.setText(prefs.getString("port", "5555"));
@@ -78,6 +90,16 @@ public class MainActivity extends Activity {
         pairManual.setOnClickListener(v -> manualPairing());
         run.setOnClickListener(v -> runCommand());
         read.setOnClickListener(v -> readValue());
+        saveLog.setOnClickListener(v -> chooseLogFile());
+
+        monitorPackageField = findViewById(R.id.monitorPackage);
+        logFolderLabel = findViewById(R.id.logFolder);
+        toggleMonitorButton = findViewById(R.id.toggleMonitor);
+        monitorPackageField.setText(prefs.getString("monitorPackage", DEFAULT_MONITOR_PACKAGE));
+        updateFolderLabel();
+        findViewById(R.id.chooseFolder).setOnClickListener(v -> chooseLogFolder());
+        toggleMonitorButton.setOnClickListener(v -> toggleMonitor());
+        LogMonitorService.listener = monitorListener;
         findViewById(R.id.clearLog).setOnClickListener(v -> log.setText(""));
 
         RadioGroup target = findViewById(R.id.target);
@@ -263,6 +285,195 @@ public class MainActivity extends Activity {
                 }
             }
         });
+    }
+
+    // ---------- Log do aparelho ----------
+
+    /** Abre o seletor do sistema para escolher onde salvar o log (.txt). */
+    private void chooseLogFile() {
+        Object[] t = null;
+        if (isRemote()) {
+            t = remoteTarget();
+            if (t == null) return;
+        }
+        String who = t != null ? (String) t[0] : (Build.MODEL == null ? "aparelho" : Build.MODEL);
+        Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("text/plain");
+        intent.putExtra(Intent.EXTRA_TITLE, DeviceLog.fileName(who));
+        try {
+            startActivityForResult(intent, REQUEST_SAVE_LOG);
+        } catch (Exception e) {
+            setStatus(Status.ERROR, "Nenhum seletor de arquivos disponível neste aparelho.");
+        }
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == REQUEST_LOG_FOLDER) {
+            onFolderChosen(resultCode == RESULT_OK && data != null ? data.getData() : null, data);
+            return;
+        }
+        if (requestCode != REQUEST_SAVE_LOG) return;
+        if (resultCode != RESULT_OK || data == null || data.getData() == null) {
+            setStatus(Status.INFO, "Geração de log cancelada.");
+            return;
+        }
+        // Recalcula o alvo: a tela pode ter sido recriada enquanto o seletor estava aberto.
+        Object[] t = null;
+        if (isRemote()) {
+            t = remoteTarget();
+            if (t == null) return;
+        }
+        saveLog(data.getData(), t);
+    }
+
+    /** Coleta o logcat do aparelho alvo e grava no arquivo escolhido. */
+    private void saveLog(final Uri uri, final Object[] t) {
+        start((t != null ? "[" + t[0] + ":" + t[1] + "] " : "") + "$ " + Adb.LOG_COMMAND);
+        background(() -> {
+            try {
+                Adb.Shell shell = t != null ? Adb.openRemote(this, (String) t[0], (Integer) t[1])
+                        : Adb.openLocal(this);
+                long lines;
+                try {
+                    lines = DeviceLog.save(shell, getContentResolver(), uri,
+                            t != null ? t[0] + ":" + t[1] : "este aparelho", null);
+                } finally {
+                    shell.close();
+                }
+                finish(Status.SUCCESS, "Log salvo (" + lines + " linhas): " + fileName(uri));
+            } catch (AdbPairingRequiredException e) {
+                DeviceLog.delete(getContentResolver(), uri);
+                finish(Status.ERROR, t != null ? "O aparelho alvo exige pareamento. Conclua a etapa 1."
+                        : "Aparelho ainda não pareado. Conclua a etapa 1.");
+            } catch (Exception e) {
+                DeviceLog.delete(getContentResolver(), uri);
+                finish(Status.ERROR, "Não foi possível gerar o log: " + Adb.describe(e));
+            }
+        });
+    }
+
+    // ---------- Log automático ----------
+
+    private void chooseLogFolder() {
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
+        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
+        try {
+            startActivityForResult(intent, REQUEST_LOG_FOLDER);
+        } catch (Exception e) {
+            setStatus(Status.ERROR, "Nenhum seletor de pastas disponível neste aparelho.");
+        }
+    }
+
+    private void onFolderChosen(Uri tree, Intent data) {
+        if (tree == null) {
+            setStatus(Status.INFO, "Escolha da pasta cancelada.");
+            return;
+        }
+        try {
+            // Mantém o acesso à pasta depois de reiniciar o app/aparelho.
+            getContentResolver().takePersistableUriPermission(tree,
+                    data.getFlags() & (Intent.FLAG_GRANT_READ_URI_PERMISSION
+                            | Intent.FLAG_GRANT_WRITE_URI_PERMISSION));
+        } catch (Exception ignored) {
+        }
+        prefs.edit().putString("logFolder", tree.toString()).apply();
+        updateFolderLabel();
+        append("Pasta dos logs automáticos: " + folderName(tree));
+        setStatus(Status.SUCCESS, "Pasta dos logs definida.");
+    }
+
+    private Uri logFolder() {
+        String s = prefs.getString("logFolder", null);
+        return s == null ? null : Uri.parse(s);
+    }
+
+    /** "primary:Download/Logs" -> "Download/Logs" (o ID da pasta é o caminho na maioria dos aparelhos). */
+    private static String folderName(Uri tree) {
+        try {
+            String id = DocumentsContract.getTreeDocumentId(tree);
+            int colon = id.indexOf(':');
+            String path = colon >= 0 ? id.substring(colon + 1) : id;
+            return path.isEmpty() ? "Armazenamento interno" : path;
+        } catch (Exception e) {
+            return tree.toString();
+        }
+    }
+
+    private void updateFolderLabel() {
+        Uri folder = logFolder();
+        logFolderLabel.setText("Pasta: " + (folder == null ? "não escolhida" : folderName(folder)));
+    }
+
+    private void toggleMonitor() {
+        if (LogMonitorService.running) {
+            LogMonitorService.stop(this);
+            return;
+        }
+        String pkg = monitorPackageField.getText().toString().trim();
+        if (pkg.isEmpty()) {
+            setStatus(Status.ERROR, "Informe o pacote do app a monitorar.");
+            return;
+        }
+        Uri folder = logFolder();
+        if (folder == null) {
+            setStatus(Status.ERROR, "Escolha a pasta onde os logs automáticos serão salvos.");
+            return;
+        }
+        String host = null;
+        int port = 0;
+        if (isRemote()) {
+            Object[] t = remoteTarget();
+            if (t == null) return;
+            host = (String) t[0];
+            port = (Integer) t[1];
+        }
+        prefs.edit().putString("monitorPackage", pkg).apply();
+        if (Build.VERSION.SDK_INT >= 33
+                && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != 0) {
+            // Sem a permissão o monitoramento funciona, só não aparece a notificação.
+            requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, 2);
+        }
+        LogMonitorService.start(this, host, port, pkg, folder);
+        updateMonitorButton(true);
+    }
+
+    private void updateMonitorButton(boolean running) {
+        toggleMonitorButton.setText(running ? "Parar monitoramento" : "Iniciar monitoramento");
+        monitorPackageField.setEnabled(!running);
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        updateMonitorButton(LogMonitorService.running);
+    }
+
+    @Override
+    protected void onDestroy() {
+        if (LogMonitorService.listener == monitorListener) LogMonitorService.listener = null;
+        super.onDestroy();
+    }
+
+    private final LogMonitorService.Listener monitorListener = (message, running) -> {
+        append("[auto] " + message);
+        updateMonitorButton(running);
+    };
+
+    /** Nome do arquivo escolhido no seletor (o Uri em si costuma ser só um ID). */
+    private String fileName(Uri uri) {
+        Cursor c = null;
+        try {
+            c = getContentResolver().query(uri, new String[]{OpenableColumns.DISPLAY_NAME}, null, null, null);
+            if (c != null && c.moveToFirst() && c.getString(0) != null) return c.getString(0);
+        } catch (Exception ignored) {
+        } finally {
+            if (c != null) c.close();
+        }
+        return uri.getLastPathSegment();
     }
 
     // ---------- Estado da tela ----------

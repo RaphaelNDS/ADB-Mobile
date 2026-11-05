@@ -286,6 +286,59 @@
                     style="@style/ButtonOutline"
                     android:layout_marginTop="10dp"
                     android:text="Ler valor atual" />
+
+                <Button
+                    android:id="@+id/saveLog"
+                    style="@style/ButtonOutline"
+                    android:layout_marginTop="10dp"
+                    android:text="Gerar log do aparelho (.txt)" />
+            </LinearLayout>
+
+            <!-- 3. Log automático -->
+            <LinearLayout style="@style/Card">
+
+                <LinearLayout style="@style/CardHeader">
+
+                    <TextView
+                        style="@style/StepBadge"
+                        android:text="3" />
+
+                    <TextView
+                        style="@style/CardTitle"
+                        android:text="Log automático" />
+                </LinearLayout>
+
+                <TextView
+                    style="@style/Body"
+                    android:text="Salva o log completo do aparelho alvo na pasta escolhida sempre que o app abaixo for aberto ou reiniciar nele (se já estiver aberto, salva ao iniciar). Mantém só os 10 logs mais recentes do app. Continua funcionando com o ADB Mobile em segundo plano." />
+
+                <TextView
+                    style="@style/FieldLabel"
+                    android:layout_marginTop="14dp"
+                    android:text="Pacote do app" />
+
+                <EditText
+                    android:id="@+id/monitorPackage"
+                    style="@style/Field"
+                    android:hint="br.com.backupautomacao.kiosk"
+                    android:inputType="textUri" />
+
+                <TextView
+                    android:id="@+id/logFolder"
+                    style="@style/Body"
+                    android:layout_marginTop="12dp" />
+
+                <Button
+                    android:id="@+id/chooseFolder"
+                    style="@style/ButtonOutline"
+                    android:layout_marginTop="10dp"
+                    android:text="Escolher pasta dos logs" />
+
+                <Button
+                    android:id="@+id/toggleMonitor"
+                    style="@style/ButtonPrimary"
+                    android:layout_marginTop="10dp"
+                    android:text="Iniciar monitoramento" />
             </LinearLayout>
 
             <!-- Registro -->
