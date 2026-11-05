@@ -216,7 +216,7 @@ public class MainActivity extends Activity {
             log("Conectando... se o alvo solicitar, autorize a depuração na tela dele.");
             background(() -> {
                 try {
-                    String[] out = Adb.remoteShell(this, (String) t[0], (Integer) t[1],
+                    String[] out = Adb.remoteShell(this, (String) t[0], (Integer) t[1], portChanged,
                             Adb.COMMAND, Adb.READ_COMMAND);
                     if (!out[0].isEmpty()) log(out[0]);
                     finish(Status.SUCCESS, "Aplicado em " + t[0] + ". eth_device_conn = " + out[1]);
@@ -261,7 +261,7 @@ public class MainActivity extends Activity {
             start("[" + t[0] + ":" + t[1] + "] $ " + Adb.READ_COMMAND);
             background(() -> {
                 try {
-                    String[] out = Adb.remoteShell(this, (String) t[0], (Integer) t[1], Adb.READ_COMMAND);
+                    String[] out = Adb.remoteShell(this, (String) t[0], (Integer) t[1], portChanged, Adb.READ_COMMAND);
                     finish(Status.INFO, "Valor atual em " + t[0] + ": eth_device_conn = " + out[0]);
                 } catch (AdbPairingRequiredException e) {
                     finish(Status.ERROR, "O aparelho alvo exige pareamento. Conclua a etapa 1.");
@@ -334,12 +334,12 @@ public class MainActivity extends Activity {
         start((t != null ? "[" + t[0] + ":" + t[1] + "] " : "") + "$ " + Adb.LOG_COMMAND);
         background(() -> {
             try {
-                Adb.Shell shell = t != null ? Adb.openRemote(this, (String) t[0], (Integer) t[1])
+                Adb.Shell shell = t != null ? Adb.openRemote(this, (String) t[0], (Integer) t[1], portChanged)
                         : Adb.openLocal(this);
                 long lines;
                 try {
                     lines = DeviceLog.save(shell, getContentResolver(), uri,
-                            t != null ? t[0] + ":" + t[1] : "este aparelho", null);
+                            t != null ? t[0] + ":" + t[1] : "este aparelho", null).lines;
                 } finally {
                     shell.close();
                 }
@@ -409,8 +409,9 @@ public class MainActivity extends Activity {
     }
 
     private void toggleMonitor() {
-        if (LogMonitorService.running) {
+        if (LogMonitorService.running || LogMonitorService.isActive(this)) {
             LogMonitorService.stop(this);
+            updateMonitorButton(false);
             return;
         }
         String pkg = monitorPackageField.getText().toString().trim();
@@ -449,7 +450,9 @@ public class MainActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
-        updateMonitorButton(LogMonitorService.running);
+        // Ficou ligado mas não está rodando (ex.: o Android recusou retomar no boot): retoma agora.
+        if (LogMonitorService.isActive(this) && !LogMonitorService.running) LogMonitorService.resume(this);
+        updateMonitorButton(LogMonitorService.running || LogMonitorService.isActive(this));
     }
 
     @Override
@@ -461,7 +464,19 @@ public class MainActivity extends Activity {
     private final LogMonitorService.Listener monitorListener = (message, running) -> {
         append("[auto] " + message);
         updateMonitorButton(running);
+        // O monitoramento pode ter achado uma porta nova e salvo nas preferências.
+        String saved = prefs.getString("port", "");
+        if (!connectPortField.hasFocus() && !saved.equals(connectPortField.getText().toString())) {
+            connectPortField.setText(saved);
+        }
     };
+
+    /** A porta informada não respondeu e a busca na rede achou a atual: atualiza o campo. */
+    private final Adb.PortListener portChanged = newPort -> runOnUiThread(() -> {
+        connectPortField.setText(String.valueOf(newPort));
+        prefs.edit().putString("port", String.valueOf(newPort)).apply();
+        append("Porta de conexão mudou; usando " + newPort + " (encontrada na rede).");
+    });
 
     /** Nome do arquivo escolhido no seletor (o Uri em si costuma ser só um ID). */
     private String fileName(Uri uri) {
