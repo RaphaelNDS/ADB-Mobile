@@ -310,7 +310,7 @@
 
                 <TextView
                     style="@style/Body"
-                    android:text="Salva o log completo do aparelho alvo na pasta escolhida sempre que o app abaixo for aberto ou reiniciar nele (se já estiver aberto, salva ao iniciar). Continua funcionando com o ADB Mobile em segundo plano." />
+                    android:text="Salva o log completo do aparelho alvo na pasta escolhida sempre que o app abaixo for aberto ou reiniciar nele (se já estiver aberto, salva ao iniciar). Mantém só os 10 logs mais recentes do app. Continua funcionando com o ADB Mobile em segundo plano." />
 
                 <TextView
                     style="@style/FieldLabel"

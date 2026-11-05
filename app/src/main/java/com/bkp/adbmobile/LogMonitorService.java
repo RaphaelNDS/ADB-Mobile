@@ -35,6 +35,8 @@ public class LogMonitorService extends Service {
     /** Espera após o app abrir, para o log incluir a inicialização dele. */
     private static final long CAPTURE_DELAY_MS = 5000;
     private static final long RETRY_MS = 5000;
+    /** Quantos logs automáticos do app ficam na pasta; os mais antigos são apagados. */
+    private static final int MAX_LOGS = 10;
 
     /** Recebe os eventos do monitoramento na thread principal (a tela, quando aberta). */
     interface Listener {
@@ -181,7 +183,9 @@ public class LogMonitorService extends Service {
             throw e;
         }
         captures++;
-        event("Log salvo (" + lines + " linhas): " + name);
+        int removed = DeviceLog.prune(getContentResolver(), folder, DeviceLog.filePrefix(pkg), MAX_LOGS);
+        event("Log salvo (" + lines + " linhas): " + name
+                + (removed > 0 ? " (" + removed + " antigo(s) apagado(s); mantidos os últimos " + MAX_LOGS + ")" : ""));
     }
 
     /** Atualiza a notificação e avisa a tela (se estiver aberta). */

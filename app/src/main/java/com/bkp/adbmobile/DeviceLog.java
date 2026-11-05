@@ -1,6 +1,7 @@
 package com.bkp.adbmobile;
 
 import android.content.ContentResolver;
+import android.database.Cursor;
 import android.net.Uri;
 import android.provider.DocumentsContract;
 
@@ -9,7 +10,10 @@ import java.io.FilterOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.text.SimpleDateFormat;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Date;
+import java.util.List;
 import java.util.Locale;
 
 /**
@@ -85,6 +89,49 @@ final class DeviceLog {
         return file;
     }
 
+    /**
+     * Mantém na pasta só os {@code keep} arquivos mais recentes que começam com {@code prefix}
+     * (o nome tem data/hora, então a ordem alfabética é a cronológica).
+     *
+     * @return quantos arquivos foram apagados
+     */
+    static int prune(ContentResolver resolver, Uri tree, String prefix, int keep) {
+        Uri children = DocumentsContract.buildChildDocumentsUriUsingTree(tree,
+                DocumentsContract.getTreeDocumentId(tree));
+        List<String[]> logs = new ArrayList<>(); // {nome, documentId}
+        Cursor c = null;
+        try {
+            c = resolver.query(children, new String[]{DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+                    DocumentsContract.Document.COLUMN_DOCUMENT_ID}, null, null, null);
+            while (c != null && c.moveToNext()) {
+                String name = c.getString(0);
+                if (name != null && name.startsWith(prefix) && name.endsWith(".txt")) {
+                    logs.add(new String[]{name, c.getString(1)});
+                }
+            }
+        } catch (Exception e) {
+            return 0;
+        } finally {
+            if (c != null) c.close();
+        }
+        if (logs.size() <= keep) return 0;
+        Collections.sort(logs, (a, b) -> a[0].compareTo(b[0]));
+        int deleted = 0;
+        for (int i = 0; i < logs.size() - keep; i++) {
+            try {
+                if (DocumentsContract.deleteDocument(resolver,
+                        DocumentsContract.buildDocumentUriUsingTree(tree, logs.get(i)[1]))) deleted++;
+            } catch (Exception ignored) {
+            }
+        }
+        return deleted;
+    }
+
+    /** Prefixo dos arquivos de log de {@code part} (ver fileName). */
+    static String filePrefix(String part) {
+        return "log_" + part.replaceAll("[^A-Za-z0-9.-]", "_") + "_";
+    }
+
     /** Remove um arquivo que ficou incompleto. */
     static void delete(ContentResolver resolver, Uri uri) {
         try {
@@ -96,6 +143,6 @@ final class DeviceLog {
     /** Nome de arquivo seguro: log_<parte>_<data>.txt */
     static String fileName(String part) {
         String stamp = new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(new Date());
-        return "log_" + part.replaceAll("[^A-Za-z0-9.-]", "_") + "_" + stamp + ".txt";
+        return filePrefix(part) + stamp + ".txt";
     }
 }
