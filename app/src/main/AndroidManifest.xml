@@ -6,6 +6,9 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Log automático: serviço em primeiro plano que observa o app aberto no aparelho alvo. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <!-- Concedida pelo próprio app via ADB na primeira conexão; usada para religar a depuração sem fio. -->
     <uses-permission
         android:name="android.permission.WRITE_SECURE_SETTINGS"
@@ -28,5 +31,9 @@
         <receiver
             android:name=".PairingReceiver"
             android:exported="false" />
+        <service
+            android:name=".LogMonitorService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
     </application>
 </manifest>
