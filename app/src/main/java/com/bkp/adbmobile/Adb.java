@@ -19,7 +19,11 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.LinkedBlockingQueue;
 import java.net.NetworkInterface;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
@@ -188,9 +192,9 @@ public final class Adb {
      * Funciona com a Depuração sem fio (Android 11+, já pareado) e com "adb tcpip 5555"
      * (nesse caso o alvo pede uma vez para autorizar a conexão).
      */
-    public static String[] remoteShell(Context context, String host, int port, String... commands)
-            throws Exception {
-        Shell shell = openRemote(context, host, port);
+    public static String[] remoteShell(Context context, String host, int port, PortListener onPortChanged,
+                                       String... commands) throws Exception {
+        Shell shell = openRemote(context, host, port, onPortChanged);
         try {
             String[] results = new String[commands.length];
             for (int i = 0; i < commands.length; i++) results[i] = shell.run(commands[i]);
@@ -210,28 +214,141 @@ public final class Adb {
         void close();
     }
 
-    /** Conecta em outro aparelho e mantém a conexão aberta até close(). */
-    public static Shell openRemote(Context context, String host, int port) throws Exception {
-        final AdbManager manager = AdbManager.create(context);
+    /** Avisada quando a porta informada não respondeu e outra porta do mesmo IP funcionou. */
+    public interface PortListener {
+        void onPortChanged(int newPort);
+    }
+
+    /**
+     * Conecta em outro aparelho e mantém a conexão aberta até close(). Se a porta não responder
+     * (ela muda quando a Depuração sem fio reinicia), procura na rede a porta atual daquele IP.
+     */
+    public static Shell openRemote(Context context, String host, int port, PortListener onPortChanged)
+            throws Exception {
+        String unreachable = "Sem resposta de " + host + ":" + port + ". Confira o IP/porta, se o "
+                + "aparelho está ligado e na mesma rede, e se a conexão foi autorizada na tela dele.";
+        AdbManager manager;
+        try {
+            manager = connect(context, host, port);
+        } catch (AdbPairingRequiredException e) {
+            throw e;
+        } catch (Exception first) {
+            manager = null;
+            for (int candidate : discoverConnectPorts(context, host, 5000)) {
+                if (candidate == port) continue;
+                try {
+                    manager = connect(context, host, candidate);
+                    if (onPortChanged != null) onPortChanged.onPortChanged(candidate);
+                    break;
+                } catch (AdbPairingRequiredException e) {
+                    throw e;
+                } catch (Exception ignored) {
+                    // Anúncio antigo na rede; tenta o próximo.
+                }
+            }
+            if (manager == null) throw new IOException(unreachable, first);
+        }
+        return wrap(manager);
+    }
+
+    /** Uma tentativa de conexão; em falha, libera o cliente e repassa o erro. */
+    private static AdbManager connect(Context context, String host, int port) throws Exception {
+        AdbManager manager = AdbManager.create(context);
         // Tempo para a pessoa aceitar o aviso "Permitir depuração?" no aparelho alvo.
         manager.setTimeout(60, TimeUnit.SECONDS);
-        String unreachable = "Sem resposta de " + host + ":" + port + ". Confira o IP/porta (a porta "
-                + "muda quando a depuração reinicia), se o aparelho está ligado e na mesma rede, "
-                + "e se a conexão foi autorizada na tela dele.";
-        boolean connected;
         try {
-            connected = manager.connect(host, port);
-        } catch (AdbPairingRequiredException e) {
-            release(manager);
-            throw e;
+            if (manager.connect(host, port)) return manager;
         } catch (Exception e) {
             release(manager);
-            throw new IOException(unreachable, e);
+            throw e;
         }
-        if (!connected) {
-            release(manager);
-            throw new IOException(unreachable);
+        release(manager);
+        throw new IOException("Conexão recusada em " + host + ":" + port);
+    }
+
+    private static final String CONNECT_SERVICE = "_adb-tls-connect._tcp";
+
+    /**
+     * Portas de conexão que a Depuração sem fio anuncia na rede (mDNS) para {@code host}.
+     * Pode vir mais de uma: a rede às vezes guarda anúncios antigos. Lista vazia se nada for achado
+     * (Android 10 ou anterior não anuncia; "adb tcpip" também não).
+     */
+    public static List<Integer> discoverConnectPorts(Context context, final String host, long timeoutMs) {
+        final List<Integer> ports = new ArrayList<>();
+        final NsdManager nsd = (NsdManager) context.getApplicationContext().getSystemService(Context.NSD_SERVICE);
+        if (nsd == null) return ports;
+        final LinkedBlockingQueue<NsdServiceInfo> found = new LinkedBlockingQueue<>();
+        NsdManager.DiscoveryListener listener = new NsdManager.DiscoveryListener() {
+            @Override
+            public void onServiceFound(NsdServiceInfo info) {
+                found.add(info);
+            }
+
+            @Override
+            public void onServiceLost(NsdServiceInfo info) {
+            }
+
+            @Override
+            public void onDiscoveryStarted(String serviceType) {
+            }
+
+            @Override
+            public void onDiscoveryStopped(String serviceType) {
+            }
+
+            @Override
+            public void onStartDiscoveryFailed(String serviceType, int errorCode) {
+            }
+
+            @Override
+            public void onStopDiscoveryFailed(String serviceType, int errorCode) {
+            }
+        };
+        try {
+            nsd.discoverServices(CONNECT_SERVICE, NsdManager.PROTOCOL_DNS_SD, listener);
+        } catch (Exception e) {
+            return ports;
         }
+        long end = System.currentTimeMillis() + timeoutMs;
+        try {
+            long left;
+            while ((left = end - System.currentTimeMillis()) > 0) {
+                NsdServiceInfo info = found.poll(left, TimeUnit.MILLISECONDS);
+                if (info == null) break;
+                // resolveService aceita um pedido por vez: resolve em sequência.
+                final CountDownLatch resolved = new CountDownLatch(1);
+                final NsdServiceInfo[] result = new NsdServiceInfo[1];
+                nsd.resolveService(info, new NsdManager.ResolveListener() {
+                    @Override
+                    public void onServiceResolved(NsdServiceInfo s) {
+                        result[0] = s;
+                        resolved.countDown();
+                    }
+
+                    @Override
+                    public void onResolveFailed(NsdServiceInfo s, int errorCode) {
+                        resolved.countDown();
+                    }
+                });
+                resolved.await(3, TimeUnit.SECONDS);
+                NsdServiceInfo s = result[0];
+                if (s != null && s.getHost() != null && host.equals(s.getHost().getHostAddress())
+                        && !ports.contains(s.getPort())) {
+                    ports.add(s.getPort());
+                }
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        } finally {
+            try {
+                nsd.stopServiceDiscovery(listener);
+            } catch (Exception ignored) {
+            }
+        }
+        return ports;
+    }
+
+    private static Shell wrap(final AdbManager manager) {
         return new Shell() {
             @Override
             public String run(String command) throws Exception {
