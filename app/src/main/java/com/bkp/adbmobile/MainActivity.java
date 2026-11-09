@@ -5,6 +5,8 @@ import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.content.pm.PackageInfo;
+import android.content.pm.PackageManager;
 import android.database.Cursor;
 import android.net.Uri;
 import android.os.Build;
@@ -25,6 +27,10 @@ import android.widget.RadioGroup;
 import android.widget.Spinner;
 import android.widget.TextView;
 
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -49,6 +55,7 @@ public class MainActivity extends Activity {
 
     private static final int REQUEST_SAVE_LOG = 10;
     private static final int REQUEST_LOG_FOLDER = 11;
+    private static final int REQUEST_INSTALL_APK = 12;
     private static final String DEFAULT_MONITOR_PACKAGE = "br.com.backupautomacao.kiosk";
 
     private final SimpleDateFormat clock = new SimpleDateFormat("HH:mm:ss", Locale.getDefault());
@@ -101,7 +108,8 @@ public class MainActivity extends Activity {
         Button read = findViewById(R.id.read);
         readButton = read;
         Button saveLog = findViewById(R.id.saveLog);
-        actions = new Button[]{notificationPairing, pairManual, run, read, saveLog};
+        Button installApk = findViewById(R.id.installApk);
+        actions = new Button[]{notificationPairing, pairManual, run, read, saveLog, installApk};
 
         hostField.setText(prefs.getString("host", ""));
         connectPortField.setText(prefs.getString("port", "5555"));
@@ -112,6 +120,7 @@ public class MainActivity extends Activity {
         run.setOnClickListener(v -> confirmAndRun());
         read.setOnClickListener(v -> readValue());
         saveLog.setOnClickListener(v -> chooseLogFile());
+        installApk.setOnClickListener(v -> chooseApk());
 
         monitorPackageField = findViewById(R.id.monitorPackage);
         logFolderLabel = findViewById(R.id.logFolder);
@@ -609,6 +618,107 @@ public class MainActivity extends Activity {
         return targets.size() == 1 ? "[" + targets.get(0).label() + "]" : "[" + targets.size() + " aparelhos]";
     }
 
+    // ---------- Instalar APK ----------
+
+    /** Escolhe o .apk no armazenamento do celular. */
+    private void chooseApk() {
+        if (isRemote() && selectedDevices() == null) return;
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        // Alguns gerenciadores não marcam o .apk com o tipo certo.
+        intent.setType("*/*");
+        intent.putExtra(Intent.EXTRA_MIME_TYPES, new String[]{
+                "application/vnd.android.package-archive", "application/octet-stream"});
+        try {
+            startActivityForResult(intent, REQUEST_INSTALL_APK);
+        } catch (Exception e) {
+            setStatus(Status.ERROR, "Nenhum seletor de arquivos disponível neste aparelho.");
+        }
+    }
+
+    /** Copia o APK escolhido para o cache, lê nome/versão e pede confirmação. */
+    private void onApkChosen(final Uri uri) {
+        if (uri == null) {
+            setStatus(Status.INFO, "Instalação cancelada.");
+            return;
+        }
+        final String name = fileName(uri);
+        setStatus(Status.INFO, "Lendo " + name + "...");
+        background(() -> {
+            final File apk = new File(getCacheDir(), "install.apk");
+            try (InputStream in = getContentResolver().openInputStream(uri);
+                 OutputStream out = new FileOutputStream(apk)) {
+                if (in == null) throw new java.io.IOException("não foi possível abrir o arquivo");
+                byte[] buf = new byte[65536];
+                int n;
+                while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
+            } catch (Exception e) {
+                runOnUiThread(() -> setStatus(Status.ERROR, "Não foi possível ler " + name + ": " + Adb.describe(e)));
+                return;
+            }
+            PackageManager pm = getPackageManager();
+            final PackageInfo info = pm.getPackageArchiveInfo(apk.getPath(), 0);
+            if (info == null) {
+                apk.delete();
+                runOnUiThread(() -> setStatus(Status.ERROR, name + " não é um APK válido."));
+                return;
+            }
+            info.applicationInfo.sourceDir = apk.getPath();
+            info.applicationInfo.publicSourceDir = apk.getPath();
+            final String app = info.applicationInfo.loadLabel(pm) + " " + info.versionName;
+            final String details = app + "\n" + info.packageName + "\n" + name + " ("
+                    + String.format(Locale.getDefault(), "%.1f MB", apk.length() / 1048576.0) + ")";
+            runOnUiThread(() -> confirmInstall(apk, app, details));
+        });
+    }
+
+    private void confirmInstall(final File apk, final String app, String details) {
+        String where = "neste aparelho";
+        if (isRemote()) {
+            List<Devices.Device> targets = selectedDevices();
+            if (targets == null) return;
+            where = targets.size() > 1 ? "em " + targets.size() + " aparelhos" : "em " + targets.get(0).label();
+        }
+        setStatus(Status.INFO, "Confirme a instalação.");
+        new AlertDialog.Builder(this)
+                .setTitle("Instalar APK")
+                .setMessage("Instalar " + where + "?\n\n" + details
+                        + "\n\nSe o app já existir, é atualizado mantendo os dados.")
+                .setPositiveButton("Instalar", (d, w) -> installApk(apk, app))
+                .setNegativeButton("Cancelar", (d, w) -> setStatus(Status.INFO, "Instalação cancelada."))
+                .show();
+    }
+
+    private void installApk(final File apk, final String app) {
+        if (isRemote()) {
+            final List<Devices.Device> targets = selectedDevices();
+            if (targets == null) return;
+            start(targetsLabel(targets) + " instalar " + app);
+            log("Enviando o APK... se o alvo solicitar, autorize a depuração na tela dele.");
+            runOnDevices(targets, "Instalado", d -> {
+                Adb.Shell shell = Adb.openRemote(this, d.host, d.port, portChangedFor(d.host));
+                try {
+                    shell.install(apk);
+                } finally {
+                    shell.close();
+                }
+                return "";
+            });
+            return;
+        }
+        start("instalar " + app);
+        background(() -> {
+            try {
+                Adb.openLocal(this).install(apk);
+                finish(Status.SUCCESS, "Instalado neste aparelho.");
+            } catch (AdbPairingRequiredException e) {
+                finish(Status.ERROR, "Aparelho ainda não pareado. Conclua a etapa 1.");
+            } catch (Exception e) {
+                finish(Status.ERROR, "Falha na instalação: " + Adb.describe(e));
+            }
+        });
+    }
+
     // ---------- Log do aparelho ----------
 
     /** Abre o seletor do sistema para escolher onde salvar o log (.txt). */
@@ -635,6 +745,10 @@ public class MainActivity extends Activity {
         super.onActivityResult(requestCode, resultCode, data);
         if (requestCode == REQUEST_LOG_FOLDER) {
             onFolderChosen(resultCode == RESULT_OK && data != null ? data.getData() : null, data);
+            return;
+        }
+        if (requestCode == REQUEST_INSTALL_APK) {
+            onApkChosen(resultCode == RESULT_OK && data != null ? data.getData() : null);
             return;
         }
         if (requestCode != REQUEST_SAVE_LOG) return;

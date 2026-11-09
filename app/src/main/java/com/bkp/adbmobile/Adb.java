@@ -16,6 +16,8 @@ import android.os.Build;
 import android.provider.Settings;
 
 import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -211,6 +213,9 @@ public final class Adb {
         /** Grava a saída do comando em {@code out} conforme chega (para saídas grandes). */
         void stream(String command, OutputStream out) throws Exception;
 
+        /** Instala o APK no aparelho (atualiza se já existir, mantendo os dados). Devolve a saída do pm. */
+        String install(File apk) throws Exception;
+
         void close();
     }
 
@@ -361,6 +366,11 @@ public final class Adb {
             }
 
             @Override
+            public String install(File apk) throws Exception {
+                return Adb.install(manager, apk);
+            }
+
+            @Override
             public void close() {
                 release(manager);
             }
@@ -398,6 +408,13 @@ public final class Adb {
                 if (root == null) run("true");
                 if (root) suStream(command, out);
                 else Adb.stream(local(context), command, out);
+            }
+
+            @Override
+            public String install(File apk) throws Exception {
+                if (root == null) run("true");
+                if (root) return installResult(su("pm install -r \"" + apk.getAbsolutePath() + "\" 2>&1"));
+                return Adb.install(local(context), apk);
             }
 
             @Override
@@ -529,6 +546,71 @@ public final class Adb {
             }
             return -1;
         }
+    }
+
+    // ---------- Instalação de APK ----------
+
+    /**
+     * Envia o APK para /data/local/tmp do aparelho e instala com "pm install -r" (o mesmo que o
+     * "adb install" faz em aparelhos antigos; funciona do Android 5 em diante).
+     */
+    private static String install(AdbManager manager, File apk) throws Exception {
+        long size = apk.length();
+        String tmp = "/data/local/tmp/adbmobile-" + System.currentTimeMillis() + ".apk";
+        AdbStream stream = manager.openStream("exec:cat > " + tmp);
+        try (InputStream in = new FileInputStream(apk)) {
+            // O libadb 3.1.1 manda vários pacotes seguidos se o bloco passar do máximo negociado,
+            // e o aparelho derruba a conexão: os blocos precisam caber num pacote só.
+            byte[] buf = new byte[manager.getAdbConnection().getMaxData()];
+            int n;
+            while ((n = in.read(buf)) > 0) stream.write(buf, 0, n);
+            // Escrita vazia: só espera o aparelho confirmar o último bloco.
+            stream.write(buf, 0, 0);
+        } finally {
+            stream.close();
+        }
+        try {
+            waitForSize(manager, tmp, size);
+            return installResult(run(manager, "pm install -r " + tmp + " 2>&1"));
+        } finally {
+            try {
+                run(manager, "rm -f " + tmp);
+            } catch (Exception ignored) {
+            }
+        }
+    }
+
+    /** O "cat" do aparelho ainda pode estar gravando o fim do arquivo quando o envio termina. */
+    private static void waitForSize(AdbManager manager, String path, long size) throws Exception {
+        String got = "";
+        for (int i = 0; i < 20; i++) {
+            got = run(manager, "stat -c %s " + path + " 2>/dev/null || wc -c < " + path);
+            if (got.equals(String.valueOf(size))) return;
+            Thread.sleep(500);
+        }
+        throw new IOException("O APK não chegou inteiro ao aparelho (" + (got.isEmpty() ? 0 : got)
+                + " de " + size + " bytes). Tente novamente.");
+    }
+
+    /** "Success" do pm; senão lança o motivo (ex.: INSTALL_FAILED_UPDATE_INCOMPATIBLE). */
+    private static String installResult(String out) throws IOException {
+        if (out.contains("Success")) return out;
+        Matcher m = Pattern.compile("Failure \\[([^\\]]+)\\]").matcher(out);
+        String reason = m.find() ? m.group(1) : out.trim();
+        throw new IOException(installHint(reason));
+    }
+
+    /** Explica os erros de instalação mais comuns. */
+    private static String installHint(String reason) {
+        if (reason.contains("UPDATE_INCOMPATIBLE"))
+            return reason + " (assinatura diferente da versão instalada: desinstale o app no aparelho antes)";
+        if (reason.contains("VERSION_DOWNGRADE"))
+            return reason + " (o aparelho já tem uma versão mais nova)";
+        if (reason.contains("INSUFFICIENT_STORAGE")) return reason + " (sem espaço no aparelho)";
+        if (reason.contains("OLDER_SDK")) return reason + " (Android do aparelho é antigo demais para o app)";
+        if (reason.contains("USER_RESTRICTED"))
+            return reason + " (o aparelho bloqueou: ative \"Instalar via USB\" nas Opções do desenvolvedor)";
+        return reason.isEmpty() ? "Instalação falhou sem mensagem do aparelho." : reason;
     }
 
     /** Como su(), mas grava a saída direto em {@code sink}. */
