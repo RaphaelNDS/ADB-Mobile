@@ -75,19 +75,44 @@
 
                 <TextView
                     style="@style/Overline"
-                    android:text="Comando configurado" />
+                    android:layout_marginBottom="8dp"
+                    android:text="Comando" />
+
+                <Spinner
+                    android:id="@+id/preset"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:minHeight="46dp"
+                    android:background="@drawable/bg_input"
+                    android:paddingStart="4dp"
+                    android:paddingEnd="4dp"
+                    android:spinnerMode="dialog"
+                    android:prompt="@string/choose_command" />
 
                 <TextView
+                    style="@style/FieldLabel"
+                    android:layout_marginTop="12dp"
+                    android:text="adb shell" />
+
+                <EditText
                     android:id="@+id/command"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="8dp"
                     android:background="@drawable/bg_code"
                     android:fontFamily="monospace"
+                    android:gravity="top|start"
+                    android:hint="digite o comando"
+                    android:inputType="textMultiLine|textNoSuggestions"
+                    android:minHeight="46dp"
                     android:padding="10dp"
                     android:textColor="@color/text_primary"
-                    android:textIsSelectable="true"
+                    android:textColorHint="@color/disabled"
                     android:textSize="13sp" />
+
+                <TextView
+                    style="@style/Body"
+                    android:layout_marginTop="6dp"
+                    android:text="Escolha um comando pronto ou edite o texto acima. Comandos de app usam o pacote informado em &quot;Log automático&quot;." />
             </LinearLayout>
 
             <!-- Aparelho alvo -->
