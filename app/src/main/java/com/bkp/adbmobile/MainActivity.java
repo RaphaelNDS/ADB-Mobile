@@ -12,19 +12,26 @@ import android.os.Bundle;
 import android.provider.DocumentsContract;
 import android.provider.OpenableColumns;
 import android.provider.Settings;
+import android.text.TextUtils;
 import android.view.View;
 import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
 import android.widget.Button;
+import android.widget.CheckBox;
 import android.widget.EditText;
+import android.widget.LinearLayout;
 import android.widget.RadioButton;
 import android.widget.RadioGroup;
 import android.widget.Spinner;
 import android.widget.TextView;
 
 import java.text.SimpleDateFormat;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Date;
+import java.util.List;
 import java.util.Locale;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import io.github.muntashirakon.adb.AdbPairingRequiredException;
 
@@ -64,6 +71,11 @@ public class MainActivity extends Activity {
     private Spinner presetSpinner;
     private EditText commandField;
     private Button readButton;
+    private List<Devices.Device> devices;
+    private LinearLayout devicesList;
+    private TextView devicesEmpty;
+    private TextView devicesSummary;
+    private EditText deviceNameField;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -93,6 +105,7 @@ public class MainActivity extends Activity {
 
         hostField.setText(prefs.getString("host", ""));
         connectPortField.setText(prefs.getString("port", "5555"));
+        setupDevices();
 
         notificationPairing.setOnClickListener(v -> startNotificationPairing());
         pairManual.setOnClickListener(v -> manualPairing());
@@ -147,16 +160,217 @@ public class MainActivity extends Activity {
         }
     }
 
-    /** IP e porta de conexão do alvo remoto; null (com aviso) se inválidos. */
+    /** IP e porta digitados no formulário (usados no pareamento); null (com aviso) se inválidos. */
     private Object[] remoteTarget() {
         String host = hostField.getText().toString().trim();
-        String port = connectPortField.getText().toString().trim();
-        if (host.isEmpty() || port.isEmpty()) {
+        String portText = connectPortField.getText().toString().trim();
+        int port = Devices.parsePort(portText);
+        if (host.isEmpty() || port < 0) {
             setStatus(Status.ERROR, "Informe o IP e a porta de conexão do aparelho alvo.");
             return null;
         }
-        prefs.edit().putString("host", host).putString("port", port).apply();
-        return new Object[]{host, Integer.parseInt(port)};
+        prefs.edit().putString("host", host).putString("port", portText).apply();
+        return new Object[]{host, port};
+    }
+
+    // ---------- Aparelhos salvos ----------
+
+    private void setupDevices() {
+        devicesList = findViewById(R.id.devicesList);
+        devicesEmpty = findViewById(R.id.devicesEmpty);
+        devicesSummary = findViewById(R.id.devicesSummary);
+        deviceNameField = findViewById(R.id.deviceName);
+        devices = Devices.load(prefs);
+        findViewById(R.id.saveDevice).setOnClickListener(v -> saveDevice());
+        findViewById(R.id.selectAll).setOnClickListener(v -> toggleAll());
+        renderDevices();
+    }
+
+    /** Recarrega a lista salva (o monitoramento pode ter atualizado uma porta). */
+    private void reloadDevices() {
+        devices = Devices.load(prefs);
+        renderDevices();
+    }
+
+    private void renderDevices() {
+        devicesList.removeAllViews();
+        float dp = getResources().getDisplayMetrics().density;
+        for (final Devices.Device d : devices) {
+            LinearLayout row = new LinearLayout(this);
+            row.setOrientation(LinearLayout.HORIZONTAL);
+            row.setGravity(android.view.Gravity.CENTER_VERTICAL);
+            row.setMinimumHeight((int) (48 * dp));
+
+            CheckBox check = new CheckBox(this);
+            check.setChecked(d.selected);
+            check.setOnCheckedChangeListener((b, checked) -> {
+                d.selected = checked;
+                Devices.save(prefs, devices);
+                updateDevicesSummary();
+            });
+
+            TextView text = new TextView(this);
+            text.setText(d.label() + (d.label().equals(d.host) ? "" : "\n" + d.host) + ":" + d.port);
+            text.setTextColor(color(R.color.text_primary));
+            text.setTextSize(14);
+            text.setPadding((int) (4 * dp), (int) (6 * dp), (int) (4 * dp), (int) (6 * dp));
+            text.setBackgroundResource(resolveSelectable());
+            // Tocar no nome preenche o formulário, para editar ou parear esse aparelho.
+            text.setOnClickListener(v -> {
+                deviceNameField.setText(d.name);
+                hostField.setText(d.host);
+                connectPortField.setText(String.valueOf(d.port));
+            });
+            row.addView(check);
+            row.addView(text, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
+
+            TextView remove = new TextView(this);
+            remove.setText("Remover");
+            remove.setTextColor(color(R.color.error));
+            remove.setTextSize(13);
+            remove.setPadding((int) (10 * dp), (int) (10 * dp), (int) (4 * dp), (int) (10 * dp));
+            remove.setBackgroundResource(resolveSelectable());
+            remove.setOnClickListener(v -> new AlertDialog.Builder(this)
+                    .setTitle("Remover aparelho")
+                    .setMessage("Remover " + d.label() + " (" + d.address() + ") da lista?")
+                    .setPositiveButton("Remover", (dlg, w) -> {
+                        devices.remove(d);
+                        Devices.save(prefs, devices);
+                        renderDevices();
+                    })
+                    .setNegativeButton("Cancelar", null)
+                    .show());
+            row.addView(remove);
+            devicesList.addView(row);
+        }
+        devicesEmpty.setVisibility(devices.isEmpty() ? View.VISIBLE : View.GONE);
+        updateDevicesSummary();
+    }
+
+    private int resolveSelectable() {
+        android.util.TypedValue value = new android.util.TypedValue();
+        getTheme().resolveAttribute(android.R.attr.selectableItemBackground, value, true);
+        return value.resourceId;
+    }
+
+    private void updateDevicesSummary() {
+        int n = Devices.selected(devices).size();
+        devicesSummary.setVisibility(devices.isEmpty() ? View.GONE : View.VISIBLE);
+        devicesSummary.setText(n == 0 ? "Nenhum aparelho marcado."
+                : n == 1 ? "1 aparelho marcado." : n + " aparelhos marcados: os comandos rodam em todos ao mesmo tempo.");
+        ((TextView) findViewById(R.id.selectAll)).setText(
+                !devices.isEmpty() && n == devices.size() ? "Desmarcar todos" : "Marcar todos");
+    }
+
+    private void toggleAll() {
+        boolean all = !devices.isEmpty() && Devices.selected(devices).size() == devices.size();
+        for (Devices.Device d : devices) d.selected = !all;
+        Devices.save(prefs, devices);
+        renderDevices();
+    }
+
+    /** Adiciona o aparelho do formulário ou, se o IP já está na lista, atualiza nome e porta. */
+    private void saveDevice() {
+        Object[] t = remoteTarget();
+        if (t == null) return;
+        String host = (String) t[0];
+        int port = (Integer) t[1];
+        String name = deviceNameField.getText().toString().trim();
+        Devices.Device d = Devices.find(devices, host);
+        if (d == null) {
+            devices.add(new Devices.Device(name, host, port, true));
+            append("Aparelho salvo: " + (name.isEmpty() ? host : name) + " (" + host + ":" + port + ")");
+        } else {
+            d.name = name;
+            d.port = port;
+            d.selected = true;
+            append("Aparelho atualizado: " + d.label() + " (" + d.address() + ")");
+        }
+        Devices.save(prefs, devices);
+        renderDevices();
+        deviceNameField.setText("");
+        setStatus(Status.SUCCESS, "Aparelho salvo e marcado.");
+    }
+
+    /** Aparelhos marcados; null (com aviso) se nenhum. */
+    private List<Devices.Device> selectedDevices() {
+        List<Devices.Device> list = Devices.selected(devices);
+        if (list.isEmpty()) {
+            setStatus(Status.ERROR, devices.isEmpty()
+                    ? "Salve ao menos um aparelho em \"Outro aparelho\"."
+                    : "Marque ao menos um aparelho na lista.");
+            return null;
+        }
+        return list;
+    }
+
+    /** Para log e monitoramento, que trabalham com um aparelho: exige exatamente um marcado. */
+    private Object[] singleTarget(String what) {
+        List<Devices.Device> list = selectedDevices();
+        if (list == null) return null;
+        if (list.size() > 1) {
+            setStatus(Status.ERROR, what + " funciona com um aparelho por vez. Deixe só um marcado.");
+            return null;
+        }
+        Devices.Device d = list.get(0);
+        return new Object[]{d.host, d.port};
+    }
+
+    /** O que fazer em cada aparelho; devolve o resumo para o registro ("" se não houver). */
+    private interface DeviceTask {
+        String run(Devices.Device d) throws Exception;
+    }
+
+    /**
+     * Roda {@code task} em todos os aparelhos ao mesmo tempo (cada um tem a sua conexão) e
+     * termina com um resumo quando o último responder.
+     */
+    private void runOnDevices(final List<Devices.Device> targets, final String verb, final DeviceTask task) {
+        final int total = targets.size();
+        final AtomicInteger done = new AtomicInteger();
+        final List<String> failed = Collections.synchronizedList(new ArrayList<>());
+        final String[] single = new String[1];
+        for (final Devices.Device d : targets) {
+            background(() -> {
+                String prefix = "[" + d.label() + "] ";
+                try {
+                    String result = task.run(d);
+                    single[0] = result.isEmpty() ? verb + " em " + d.label() + "." : d.label() + ": " + result;
+                    log(prefix + "OK" + (result.isEmpty() ? "" : ": " + result));
+                } catch (AdbPairingRequiredException e) {
+                    failed.add(d.label());
+                    single[0] = d.label() + " exige pareamento. Conclua a etapa 1.";
+                    log(prefix + "ERRO: exige pareamento. Conclua a etapa 1.");
+                } catch (Exception e) {
+                    failed.add(d.label());
+                    single[0] = "Falha em " + d.label() + ": " + Adb.describe(e);
+                    log(prefix + "ERRO: " + Adb.describe(e));
+                }
+                if (done.incrementAndGet() < total) return;
+                if (total == 1) {
+                    finish(failed.isEmpty() ? Status.SUCCESS : Status.ERROR, single[0]);
+                } else if (failed.isEmpty()) {
+                    finish(Status.SUCCESS, verb + " nos " + total + " aparelhos.");
+                } else {
+                    finish(Status.ERROR, "Falhou em " + failed.size() + " de " + total + ": "
+                            + TextUtils.join(", ", failed) + ".");
+                }
+            });
+        }
+    }
+
+    /** Avisa quando a porta de um aparelho mudou e a busca na rede achou a atual. */
+    private Adb.PortListener portChangedFor(final String host) {
+        return newPort -> {
+            Devices.updatePort(prefs, host, newPort);
+            runOnUiThread(() -> {
+                reloadDevices();
+                if (host.equals(hostField.getText().toString().trim())) {
+                    connectPortField.setText(String.valueOf(newPort));
+                }
+                append("Porta de " + host + " mudou; usando " + newPort + " (encontrada na rede).");
+            });
+        };
     }
 
     private void startNotificationPairing() {
@@ -288,9 +502,16 @@ public class MainActivity extends Activity {
             runCommand(cmd, preset.read);
             return;
         }
+        String where = "no aparelho alvo";
+        if (isRemote()) {
+            List<Devices.Device> targets = selectedDevices();
+            if (targets == null) return;
+            if (targets.size() > 1) where = "em " + targets.size() + " aparelhos";
+            else where = "em " + targets.get(0).label();
+        }
         new AlertDialog.Builder(this)
                 .setTitle(preset.label)
-                .setMessage("Executar no aparelho alvo?\n\nadb shell " + cmd)
+                .setMessage("Executar " + where + "?\n\nadb shell " + cmd)
                 .setPositiveButton("Executar", (d, w) -> runCommand(cmd, preset.read))
                 .setNegativeButton("Cancelar", null)
                 .show();
@@ -299,23 +520,16 @@ public class MainActivity extends Activity {
     /** Executa {@code cmd} no aparelho alvo e, se {@code read} não for null, lê o valor resultante. */
     private void runCommand(final String cmd, final String read) {
         if (isRemote()) {
-            final Object[] t = remoteTarget();
-            if (t == null) return;
-            start("[" + t[0] + ":" + t[1] + "] $ " + cmd);
+            final List<Devices.Device> targets = selectedDevices();
+            if (targets == null) return;
+            start(targetsLabel(targets) + " $ " + cmd);
             log("Conectando... se o alvo solicitar, autorize a depuração na tela dele.");
-            background(() -> {
-                try {
-                    String[] out = read == null
-                            ? Adb.remoteShell(this, (String) t[0], (Integer) t[1], portChanged, cmd)
-                            : Adb.remoteShell(this, (String) t[0], (Integer) t[1], portChanged, cmd, read);
-                    logOutput(out[0]);
-                    finish(Status.SUCCESS, read == null ? "Executado em " + t[0] + "."
-                            : "Aplicado em " + t[0] + ". " + valueName(read) + " = " + out[1]);
-                } catch (AdbPairingRequiredException e) {
-                    finish(Status.ERROR, "O aparelho alvo exige pareamento. Conclua a etapa 1.");
-                } catch (Exception e) {
-                    finish(Status.ERROR, "Falha: " + Adb.describe(e));
-                }
+            runOnDevices(targets, read == null ? "Executado" : "Aplicado", d -> {
+                String[] out = read == null
+                        ? Adb.remoteShell(this, d.host, d.port, portChangedFor(d.host), cmd)
+                        : Adb.remoteShell(this, d.host, d.port, portChangedFor(d.host), cmd, read);
+                logOutput("[" + d.label() + "] ", out[0]);
+                return read == null ? "" : valueName(read) + " = " + out[1];
             });
             return;
         }
@@ -333,13 +547,13 @@ public class MainActivity extends Activity {
             }
             try {
                 if (root) {
-                    logOutput(Adb.su(cmd));
+                    logOutput("", Adb.su(cmd));
                     finish(Status.SUCCESS, read == null ? "Executado via root."
                             : "Aplicado via root. " + valueName(read) + " = " + Adb.su(read));
                     return;
                 }
                 // 2) ADB pela Depuração sem fio
-                logOutput(Adb.shell(this, cmd));
+                logOutput("", Adb.shell(this, cmd));
                 String value = read == null ? null : Adb.shell(this, read);
                 Adb.grantSelfSecureSettings(this);
                 finish(Status.SUCCESS, read == null ? "Executado neste aparelho."
@@ -357,19 +571,11 @@ public class MainActivity extends Activity {
         if (read == null) return;
         final String name = valueName(read);
         if (isRemote()) {
-            final Object[] t = remoteTarget();
-            if (t == null) return;
-            start("[" + t[0] + ":" + t[1] + "] $ " + read);
-            background(() -> {
-                try {
-                    String[] out = Adb.remoteShell(this, (String) t[0], (Integer) t[1], portChanged, read);
-                    finish(Status.INFO, "Valor atual em " + t[0] + ": " + name + " = " + out[0]);
-                } catch (AdbPairingRequiredException e) {
-                    finish(Status.ERROR, "O aparelho alvo exige pareamento. Conclua a etapa 1.");
-                } catch (Exception e) {
-                    finish(Status.ERROR, "Não foi possível ler: " + Adb.describe(e));
-                }
-            });
+            final List<Devices.Device> targets = selectedDevices();
+            if (targets == null) return;
+            start(targetsLabel(targets) + " $ " + read);
+            runOnDevices(targets, "Lido", d -> name + " = "
+                    + Adb.remoteShell(this, d.host, d.port, portChangedFor(d.host), read)[0]);
             return;
         }
         start("$ " + read);
@@ -389,11 +595,18 @@ public class MainActivity extends Activity {
     }
 
     /** Mostra a saída do comando no registro (cortada se for muito grande). */
-    private void logOutput(String out) {
+    private void logOutput(String prefix, String out) {
         if (out == null || out.isEmpty()) return;
         final int max = 20000;
-        log(out.length() <= max ? out
-                : out.substring(0, max) + "\n... (saída cortada; " + out.length() + " caracteres)");
+        String text = out.length() <= max ? out
+                : out.substring(0, max) + "\n... (saída cortada; " + out.length() + " caracteres)";
+        // Com prefixo (vários aparelhos), a saída começa na linha de baixo para não desalinhar.
+        log(prefix.isEmpty() ? text : prefix + "\n" + text);
+    }
+
+    /** "[Quiosque 1]" para um aparelho, "[3 aparelhos]" para vários. */
+    private static String targetsLabel(List<Devices.Device> targets) {
+        return targets.size() == 1 ? "[" + targets.get(0).label() + "]" : "[" + targets.size() + " aparelhos]";
     }
 
     // ---------- Log do aparelho ----------
@@ -402,7 +615,7 @@ public class MainActivity extends Activity {
     private void chooseLogFile() {
         Object[] t = null;
         if (isRemote()) {
-            t = remoteTarget();
+            t = singleTarget("Gerar log");
             if (t == null) return;
         }
         String who = t != null ? (String) t[0] : (Build.MODEL == null ? "aparelho" : Build.MODEL);
@@ -432,7 +645,7 @@ public class MainActivity extends Activity {
         // Recalcula o alvo: a tela pode ter sido recriada enquanto o seletor estava aberto.
         Object[] t = null;
         if (isRemote()) {
-            t = remoteTarget();
+            t = singleTarget("Gerar log");
             if (t == null) return;
         }
         saveLog(data.getData(), t);
@@ -443,7 +656,8 @@ public class MainActivity extends Activity {
         start((t != null ? "[" + t[0] + ":" + t[1] + "] " : "") + "$ " + Adb.LOG_COMMAND);
         background(() -> {
             try {
-                Adb.Shell shell = t != null ? Adb.openRemote(this, (String) t[0], (Integer) t[1], portChanged)
+                Adb.Shell shell = t != null ? Adb.openRemote(this, (String) t[0], (Integer) t[1],
+                        portChangedFor((String) t[0]))
                         : Adb.openLocal(this);
                 long lines;
                 try {
@@ -536,7 +750,7 @@ public class MainActivity extends Activity {
         String host = null;
         int port = 0;
     if (isRemote()) {
-            Object[] t = remoteTarget();
+            Object[] t = singleTarget("O monitoramento");
             if (t == null) return;
             host = (String) t[0];
             port = (Integer) t[1];
@@ -573,19 +787,9 @@ public class MainActivity extends Activity {
     private final LogMonitorService.Listener monitorListener = (message, running) -> {
         append("[auto] " + message);
         updateMonitorButton(running);
-        // O monitoramento pode ter achado uma porta nova e salvo nas preferências.
-        String saved = prefs.getString("port", "");
-        if (!connectPortField.hasFocus() && !saved.equals(connectPortField.getText().toString())) {
-            connectPortField.setText(saved);
-        }
+        // O monitoramento pode ter achado uma porta nova e salvo na lista de aparelhos.
+        reloadDevices();
     };
-
-    /** A porta informada não respondeu e a busca na rede achou a atual: atualiza o campo. */
-    private final Adb.PortListener portChanged = newPort -> runOnUiThread(() -> {
-        connectPortField.setText(String.valueOf(newPort));
-        prefs.edit().putString("port", String.valueOf(newPort)).apply();
-        append("Porta de conexão mudou; usando " + newPort + " (encontrada na rede).");
-    });
 
     /** Nome do arquivo escolhido no seletor (o Uri em si costuma ser só um ID). */
     private String fileName(Uri uri) {

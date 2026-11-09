@@ -180,12 +180,9 @@ public class LogMonitorService extends Service {
     private void onPortChanged(int newPort) {
         int old = port;
         port = newPort;
-        SharedPreferences.Editor edit = prefs.edit().putInt(KEY_PORT, newPort);
-        // Mantém a tela coerente quando o alvo dela é o mesmo do monitoramento.
-        if (host != null && host.equals(prefs.getString("host", null))) {
-            edit.putString("port", String.valueOf(newPort));
-        }
-        edit.apply();
+        prefs.edit().putInt(KEY_PORT, newPort).apply();
+        // Mantém a lista de aparelhos da tela coerente com o monitoramento.
+        if (host != null) Devices.updatePort(prefs, host, newPort);
         event("Porta de conexão mudou: " + old + " → " + newPort + " (encontrada na rede).");
     }
 
