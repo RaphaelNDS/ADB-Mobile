@@ -384,6 +384,12 @@
                     style="@style/ButtonOutline"
                     android:layout_marginTop="10dp"
                     android:text="Gerar log do aparelho (.txt)" />
+
+                <Button
+                    android:id="@+id/installApk"
+                    style="@style/ButtonOutline"
+                    android:layout_marginTop="10dp"
+                    android:text="Instalar APK (.apk)" />
             </LinearLayout>
 
             <!-- 3. Log automático -->
