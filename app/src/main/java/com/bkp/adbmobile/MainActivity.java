@@ -2,6 +2,7 @@ package com.bkp.adbmobile;
 
 import android.Manifest;
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.database.Cursor;
@@ -12,10 +13,13 @@ import android.provider.DocumentsContract;
 import android.provider.OpenableColumns;
 import android.provider.Settings;
 import android.view.View;
+import android.widget.AdapterView;
+import android.widget.ArrayAdapter;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.RadioButton;
 import android.widget.RadioGroup;
+import android.widget.Spinner;
 import android.widget.TextView;
 
 import java.text.SimpleDateFormat;
@@ -25,7 +29,8 @@ import java.util.Locale;
 import io.github.muntashirakon.adb.AdbPairingRequiredException;
 
 /**
- * Executa o equivalente a: adb shell settings put system eth_device_conn 2
+ * Executa comandos "adb shell" escolhidos numa lista ({@link AdbCommands}) ou digitados,
+ * por exemplo: settings put system eth_device_conn 2
  *
  * Neste aparelho: usa root (su) se houver; senão, conecta à "Depuração sem fio" local
  * (pareamento feito uma vez) e roda o comando como usuário shell.
@@ -56,6 +61,9 @@ public class MainActivity extends Activity {
     private EditText monitorPackageField;
     private TextView logFolderLabel;
     private Button toggleMonitorButton;
+    private Spinner presetSpinner;
+    private EditText commandField;
+    private Button readButton;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -63,7 +71,6 @@ public class MainActivity extends Activity {
         setContentView(R.layout.activity_main);
         prefs = getSharedPreferences("alvo", MODE_PRIVATE);
 
-        ((TextView) findViewById(R.id.command)).setText("adb shell " + Adb.COMMAND);
         ((TextView) findViewById(R.id.version)).setText("v" + versionName());
 
         remoteOption = findViewById(R.id.targetRemote);
@@ -80,6 +87,7 @@ public class MainActivity extends Activity {
         Button pairManual = findViewById(R.id.pairManual);
         Button run = findViewById(R.id.run);
         Button read = findViewById(R.id.read);
+        readButton = read;
         Button saveLog = findViewById(R.id.saveLog);
         actions = new Button[]{notificationPairing, pairManual, run, read, saveLog};
 
@@ -88,7 +96,7 @@ public class MainActivity extends Activity {
 
         notificationPairing.setOnClickListener(v -> startNotificationPairing());
         pairManual.setOnClickListener(v -> manualPairing());
-        run.setOnClickListener(v -> runCommand());
+        run.setOnClickListener(v -> confirmAndRun());
         read.setOnClickListener(v -> readValue());
         saveLog.setOnClickListener(v -> chooseLogFile());
 
@@ -96,6 +104,7 @@ public class MainActivity extends Activity {
         logFolderLabel = findViewById(R.id.logFolder);
         toggleMonitorButton = findViewById(R.id.toggleMonitor);
         monitorPackageField.setText(prefs.getString("monitorPackage", DEFAULT_MONITOR_PACKAGE));
+        setupCommands();
         updateFolderLabel();
         findViewById(R.id.chooseFolder).setOnClickListener(v -> chooseLogFolder());
         toggleMonitorButton.setOnClickListener(v -> toggleMonitor());
@@ -208,18 +217,100 @@ public class MainActivity extends Activity {
         });
     }
 
-    private void runCommand() {
+    // ---------- Comandos ----------
+
+    private void setupCommands() {
+        presetSpinner = findViewById(R.id.preset);
+        commandField = findViewById(R.id.command);
+        ArrayAdapter<AdbCommands.Preset> adapter = new ArrayAdapter<>(this,
+                android.R.layout.simple_spinner_item, AdbCommands.PRESETS);
+        adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        presetSpinner.setAdapter(adapter);
+
+        final int saved = Math.max(0, Math.min(prefs.getInt("preset", 0), AdbCommands.PRESETS.length - 1));
+        presetSpinner.setSelection(saved, false);
+        commandField.setText(prefs.getString("command", fill(AdbCommands.PRESETS[saved].command)));
+        updateReadButton();
+        presetSpinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+            /** O Spinner avisa a seleção inicial ao desenhar; ela não deve sobrescrever o texto salvo. */
+            private int shown = saved;
+
+            @Override
+            public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
+                if (position == shown) return;
+                shown = position;
+                prefs.edit().putInt("preset", position).apply();
+                commandField.setText(fill(AdbCommands.PRESETS[position].command));
+                if (AdbCommands.PRESETS[position].command.isEmpty()) commandField.requestFocus();
+                updateReadButton();
+            }
+
+            @Override
+            public void onNothingSelected(AdapterView<?> parent) {
+            }
+        });
+    }
+
+    private AdbCommands.Preset selectedPreset() {
+        int i = presetSpinner.getSelectedItemPosition();
+        return AdbCommands.PRESETS[i < 0 ? 0 : i];
+    }
+
+    private void updateReadButton() {
+        readButton.setVisibility(selectedPreset().read != null ? View.VISIBLE : View.GONE);
+    }
+
+    /** Troca {pacote} pelo pacote informado no Log automático. */
+    private String fill(String command) {
+        String pkg = monitorPackageField.getText().toString().trim();
+        return pkg.isEmpty() ? command : command.replace(AdbCommands.PACKAGE, pkg);
+    }
+
+    /** Nome do valor lido: "settings get system eth_device_conn" -> "eth_device_conn". */
+    private static String valueName(String readCommand) {
+        String[] parts = readCommand.trim().split("\\s+");
+        return parts[parts.length - 1];
+    }
+
+    private void confirmAndRun() {
+        final String cmd = commandField.getText().toString().trim();
+        if (cmd.isEmpty()) {
+            setStatus(Status.ERROR, "Escolha ou digite um comando.");
+            return;
+        }
+        if (cmd.contains(AdbCommands.PACKAGE)) {
+            setStatus(Status.ERROR, "Informe o pacote do app (em \"Log automático\") ou edite o comando.");
+            return;
+        }
+        prefs.edit().putString("command", cmd).apply();
+        final AdbCommands.Preset preset = selectedPreset();
+        if (!preset.confirm) {
+            runCommand(cmd, preset.read);
+            return;
+        }
+        new AlertDialog.Builder(this)
+                .setTitle(preset.label)
+                .setMessage("Executar no aparelho alvo?\n\nadb shell " + cmd)
+                .setPositiveButton("Executar", (d, w) -> runCommand(cmd, preset.read))
+                .setNegativeButton("Cancelar", null)
+                .show();
+    }
+
+    /** Executa {@code cmd} no aparelho alvo e, se {@code read} não for null, lê o valor resultante. */
+    private void runCommand(final String cmd, final String read) {
         if (isRemote()) {
             final Object[] t = remoteTarget();
             if (t == null) return;
-            start("[" + t[0] + ":" + t[1] + "] $ " + Adb.COMMAND);
+            start("[" + t[0] + ":" + t[1] + "] $ " + cmd);
             log("Conectando... se o alvo solicitar, autorize a depuração na tela dele.");
             background(() -> {
                 try {
-                    String[] out = Adb.remoteShell(this, (String) t[0], (Integer) t[1], portChanged,
-                            Adb.COMMAND, Adb.READ_COMMAND);
-                    if (!out[0].isEmpty()) log(out[0]);
-                    finish(Status.SUCCESS, "Aplicado em " + t[0] + ". eth_device_conn = " + out[1]);
+                    String[] out = read == null
+                            ? Adb.remoteShell(this, (String) t[0], (Integer) t[1], portChanged, cmd)
+                            : Adb.remoteShell(this, (String) t[0], (Integer) t[1], portChanged, cmd, read);
+                    logOutput(out[0]);
+                    finish(Status.SUCCESS, read == null ? "Executado em " + t[0] + "."
+                            : "Aplicado em " + t[0] + ". " + valueName(read) + " = " + out[1]);
                 } catch (AdbPairingRequiredException e) {
                     finish(Status.ERROR, "O aparelho alvo exige pareamento. Conclua a etapa 1.");
                 } catch (Exception e) {
@@ -229,23 +320,30 @@ public class MainActivity extends Activity {
             return;
         }
 
-        start("$ " + Adb.COMMAND);
+        start("$ " + cmd);
         background(() -> {
-            // 1) Root, se existir
+            // 1) Root, se existir (testado antes para não executar o comando duas vezes)
+            boolean root;
             try {
-                Adb.su(Adb.COMMAND);
-                finish(Status.SUCCESS, "Aplicado via root. eth_device_conn = " + Adb.su(Adb.READ_COMMAND));
-                return;
+                Adb.su("true");
+                root = true;
             } catch (Exception e) {
+                root = false;
                 log("Root indisponível; usando ADB local.");
             }
-            // 2) ADB pela Depuração sem fio
             try {
-                String out = Adb.shell(this, Adb.COMMAND);
-                if (!out.isEmpty()) log(out);
-                String value = Adb.shell(this, Adb.READ_COMMAND);
+                if (root) {
+                    logOutput(Adb.su(cmd));
+                    finish(Status.SUCCESS, read == null ? "Executado via root."
+                            : "Aplicado via root. " + valueName(read) + " = " + Adb.su(read));
+                    return;
+                }
+                // 2) ADB pela Depuração sem fio
+                logOutput(Adb.shell(this, cmd));
+                String value = read == null ? null : Adb.shell(this, read);
                 Adb.grantSelfSecureSettings(this);
-                finish(Status.SUCCESS, "Aplicado neste aparelho. eth_device_conn = " + value);
+                finish(Status.SUCCESS, read == null ? "Executado neste aparelho."
+                        : "Aplicado neste aparelho. " + valueName(read) + " = " + value);
             } catch (AdbPairingRequiredException e) {
                 finish(Status.ERROR, "Aparelho ainda não pareado. Conclua a etapa 1.");
             } catch (Exception e) {
@@ -255,14 +353,17 @@ public class MainActivity extends Activity {
     }
 
     private void readValue() {
+        final String read = selectedPreset().read;
+        if (read == null) return;
+        final String name = valueName(read);
         if (isRemote()) {
             final Object[] t = remoteTarget();
             if (t == null) return;
-            start("[" + t[0] + ":" + t[1] + "] $ " + Adb.READ_COMMAND);
+            start("[" + t[0] + ":" + t[1] + "] $ " + read);
             background(() -> {
                 try {
-                    String[] out = Adb.remoteShell(this, (String) t[0], (Integer) t[1], portChanged, Adb.READ_COMMAND);
-                    finish(Status.INFO, "Valor atual em " + t[0] + ": eth_device_conn = " + out[0]);
+                    String[] out = Adb.remoteShell(this, (String) t[0], (Integer) t[1], portChanged, read);
+                    finish(Status.INFO, "Valor atual em " + t[0] + ": " + name + " = " + out[0]);
                 } catch (AdbPairingRequiredException e) {
                     finish(Status.ERROR, "O aparelho alvo exige pareamento. Conclua a etapa 1.");
                 } catch (Exception e) {
@@ -271,20 +372,28 @@ public class MainActivity extends Activity {
             });
             return;
         }
-        start("$ " + Adb.READ_COMMAND);
+        start("$ " + read);
         background(() -> {
             try {
-                finish(Status.INFO, "Valor atual: eth_device_conn = " + Adb.shell(this, Adb.READ_COMMAND));
+                finish(Status.INFO, "Valor atual: " + name + " = " + Adb.shell(this, read));
             } catch (AdbPairingRequiredException e) {
                 finish(Status.ERROR, "Aparelho ainda não pareado. Conclua a etapa 1.");
             } catch (Exception e) {
                 try {
-                    finish(Status.INFO, "Valor atual (root): eth_device_conn = " + Adb.su(Adb.READ_COMMAND));
+                    finish(Status.INFO, "Valor atual (root): " + name + " = " + Adb.su(read));
                 } catch (Exception e2) {
                     finish(Status.ERROR, "Não foi possível ler: " + Adb.describe(e));
                 }
             }
         });
+    }
+
+    /** Mostra a saída do comando no registro (cortada se for muito grande). */
+    private void logOutput(String out) {
+        if (out == null || out.isEmpty()) return;
+        final int max = 20000;
+        log(out.length() <= max ? out
+                : out.substring(0, max) + "\n... (saída cortada; " + out.length() + " caracteres)");
     }
 
     // ---------- Log do aparelho ----------
@@ -426,7 +535,7 @@ public class MainActivity extends Activity {
         }
         String host = null;
         int port = 0;
-        if (isRemote()) {
+    if (isRemote()) {
             Object[] t = remoteTarget();
             if (t == null) return;
             host = (String) t[0];
