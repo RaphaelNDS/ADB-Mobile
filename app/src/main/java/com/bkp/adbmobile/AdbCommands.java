@@ -1,5 +1,7 @@
 package com.bkp.adbmobile;
 
+import java.util.Locale;
+
 /**
  * Comandos "adb shell" prontos para escolher na tela. O texto vai para um campo editável,
  * então dá para ajustar antes de executar. {@link #PACKAGE} é trocado pelo pacote informado
@@ -17,19 +19,29 @@ public final class AdbCommands {
     /** Mostra o Device Owner atual (Android 10+). */
     private static final String DEVICE_OWNER_READ = "dpm list-owners";
 
+    private static final String DEVICE_OWNER = "Device Owner";
+    private static final String ETHERNET = "Ethernet (eth_device_conn)";
+    private static final String ANIMATIONS = "Escala das animações";
+
     public static final class Preset {
         public final String label;
         public final String command;
         /** Comando que lê o valor resultante ("Ler valor atual"); null se não se aplica. */
         public final String read;
+        /** Nome do valor lido, mostrado como "nome = valor". */
+        public final String readName;
         /** Pede confirmação antes de executar (reinicia, apaga dados etc.). */
         public final boolean confirm;
+        /** Aviso extra mostrado na confirmação; null se não há. */
+        public final String warning;
 
-        Preset(String label, String command, String read, boolean confirm) {
+        Preset(String label, String command, String read, String readName, boolean confirm, String warning) {
             this.label = label;
             this.command = command;
             this.read = read;
+            this.readName = readName;
             this.confirm = confirm;
+            this.warning = warning;
         }
 
         @Override
@@ -39,21 +51,65 @@ public final class AdbCommands {
     }
 
     private static Preset run(String label, String command) {
-        return new Preset(label, command, null, false);
+        return new Preset(label, command, null, null, false, null);
     }
 
-    private static Preset set(String label, String command, String read) {
-        return new Preset(label, command, read, false);
+    private static Preset set(String label, String command, String read, String readName) {
+        return new Preset(label, command, read, readName, false, null);
     }
 
     private static Preset danger(String label, String command) {
-        return new Preset(label, command, null, true);
+        return new Preset(label, command, null, null, true, null);
+    }
+
+    /**
+     * Traduz falhas conhecidas na saída de um comando (o shell não devolve o código de saída,
+     * então o erro só aparece no texto). Só considera falha quando a saída começa com a exceção
+     * impressa pelos comandos do Android (dpm, cmd etc.), para não confundir com textos de
+     * dumpsys ou logs. Devolve null se a saída não indica falha.
+     */
+    public static String failure(String output) {
+        if (output == null) return null;
+        String o = output.toLowerCase(Locale.ROOT);
+        int at = o.indexOf("exception occurred while executing");
+        if (at < 0 || at > 200) return null;
+        if (o.contains("non-test admin")) {
+            return "O Android só permite remover o Device Owner pelo ADB quando o Kiosk é uma versão "
+                    + "de teste (testOnly). Remova pelo próprio app Kiosk ou restaure o aparelho de fábrica.";
+        }
+        if (o.contains("already some accounts") || o.contains("accounts on the device")) {
+            return "Há contas cadastradas no aparelho (Google, Samsung etc.). Remova todas em "
+                    + "Configurações > Contas e tente de novo.";
+        }
+        if (o.contains("several users") || o.contains("multiple users")) {
+            return "Há mais de um usuário no aparelho. Remova os outros usuários e tente de novo.";
+        }
+        // "Trying to set the device owner (...), but device owner (...) is already set."
+        if (o.contains("is already set") || o.contains("already has a device owner")
+                || o.contains("already has an owner")) {
+            return "Já existe um Device Owner neste aparelho. Remova o atual antes de definir outro.";
+        }
+        if (o.contains("already provisioned") || o.contains("already been provisioned")) {
+            return "O aparelho já foi configurado e o Android não aceita mais um Device Owner. "
+                    + "Restaure de fábrica e defina antes de adicionar contas.";
+        }
+        if (o.contains("unknown admin") || o.contains("bad admin")) {
+            return "O app Kiosk não está instalado no aparelho (ou não tem o administrador "
+                    + "br.com.backupautomacao.kiosk.admin.AdminReceiver).";
+        }
+        for (String line : output.split("\n")) {
+            line = line.trim();
+            if (line.startsWith("java.") || line.startsWith("android.")) {
+                return "O comando falhou: " + line;
+            }
+        }
+        return "O comando falhou.";
     }
 
     public static final Preset[] PRESETS = {
-            set("Ativar conexão Ethernet (eth_device_conn = 2)", Adb.COMMAND, Adb.READ_COMMAND),
+            set("Ativar conexão Ethernet (eth_device_conn = 2)", Adb.COMMAND, Adb.READ_COMMAND, ETHERNET),
             set("Desativar conexão Ethernet (eth_device_conn = 0)",
-                    "settings put system eth_device_conn 0", Adb.READ_COMMAND),
+                    "settings put system eth_device_conn 0", Adb.READ_COMMAND, ETHERNET),
 
             // Informações
             run("Informações do aparelho", Adb.DEVICE_INFO_COMMAND),
@@ -75,25 +131,31 @@ public final class AdbCommands {
 
             // Kiosk (Device Owner)
             new Preset("Kiosk: definir como Device Owner",
-                    "dpm set-device-owner " + KIOSK_ADMIN, DEVICE_OWNER_READ, true),
+                    "dpm set-device-owner " + KIOSK_ADMIN, DEVICE_OWNER_READ, DEVICE_OWNER, true,
+                    "O aparelho não pode ter contas (Google, Samsung etc.), outros usuários nem outro "
+                            + "Device Owner.\n\nDepois de definido, só o próprio Kiosk ou uma restauração "
+                            + "de fábrica removem."),
             new Preset("Kiosk: remover Device Owner",
-                    "dpm remove-active-admin " + KIOSK_ADMIN, DEVICE_OWNER_READ, true),
+                    "dpm remove-active-admin " + KIOSK_ADMIN, DEVICE_OWNER_READ, DEVICE_OWNER, true,
+                    "Só funciona se o Kiosk instalado for uma versão de teste (testOnly). Na versão "
+                            + "normal o Android recusa; nesse caso remova pelo próprio Kiosk."),
 
             // Configurações
             set("Tela: desligar após 30 min", "settings put system screen_off_timeout 1800000",
-                    "settings get system screen_off_timeout"),
+                    "settings get system screen_off_timeout", "Desligar tela após (ms)"),
             set("Tela: manter ligada enquanto carrega", "settings put global stay_on_while_plugged_in 7",
-                    "settings get global stay_on_while_plugged_in"),
+                    "settings get global stay_on_while_plugged_in", "Manter ligada carregando"),
             set("Brilho máximo", "settings put system screen_brightness_mode 0; "
-                    + "settings put system screen_brightness 255", "settings get system screen_brightness"),
+                    + "settings put system screen_brightness 255", "settings get system screen_brightness",
+                    "Brilho (0-255)"),
             set("Desativar animações", "settings put global window_animation_scale 0; "
                     + "settings put global transition_animation_scale 0; "
                     + "settings put global animator_duration_scale 0",
-                    "settings get global animator_duration_scale"),
+                    "settings get global animator_duration_scale", ANIMATIONS),
             set("Ativar animações", "settings put global window_animation_scale 1; "
                     + "settings put global transition_animation_scale 1; "
                     + "settings put global animator_duration_scale 1",
-                    "settings get global animator_duration_scale"),
+                    "settings get global animator_duration_scale", ANIMATIONS),
             run("Ligar Wi-Fi", "svc wifi enable"),
             run("Abrir Configurações", "am start -a android.settings.SETTINGS"),
 
@@ -103,7 +165,7 @@ public final class AdbCommands {
             run("Ligar/desligar tela", "input keyevent KEYCODE_POWER"),
             danger("Reiniciar aparelho", "reboot"),
 
-            new Preset("Comando personalizado", "", null, false),
+            new Preset("Comando personalizado", "", null, null, false, null),
     };
 
     private AdbCommands() {

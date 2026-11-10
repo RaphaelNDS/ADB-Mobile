@@ -29,6 +29,7 @@ import android.widget.TextView;
 
 import java.io.File;
 import java.io.FileOutputStream;
+import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.text.SimpleDateFormat;
@@ -506,10 +507,16 @@ public class MainActivity extends Activity {
         return pkg.isEmpty() ? command : command.replace(AdbCommands.PACKAGE, pkg);
     }
 
-    /** Nome do valor lido: "settings get system eth_device_conn" -> "eth_device_conn". */
-    private static String valueName(String readCommand) {
-        String[] parts = readCommand.trim().split("\\s+");
-        return parts[parts.length - 1];
+    /** Erro do comando em português; troca o texto do Android por uma explicação quando conhecida. */
+    private static String commandError(Exception e) {
+        String friendly = AdbCommands.failure(Adb.describe(e));
+        return friendly != null ? friendly : Adb.describe(e);
+    }
+
+    /** Lança a falha indicada pela saída do comando (o shell não devolve o código de saída). */
+    private static void checkOutput(String out) throws IOException {
+        String failure = AdbCommands.failure(out);
+        if (failure != null) throw new IOException(failure);
     }
 
     private void confirmAndRun() {
@@ -525,7 +532,7 @@ public class MainActivity extends Activity {
         prefs.edit().putString("command", cmd).apply();
         final AdbCommands.Preset preset = selectedPreset();
         if (!preset.confirm) {
-            runCommand(cmd, preset.read);
+            runCommand(cmd, preset);
             return;
         }
         String where = "no aparelho alvo";
@@ -535,16 +542,23 @@ public class MainActivity extends Activity {
             if (targets.size() > 1) where = "em " + targets.size() + " aparelhos";
             else where = "em " + targets.get(0).label();
         }
+        String message = "Executar " + where + "?\n\nadb shell " + cmd;
+        if (preset.warning != null) message += "\n\nAtenção: " + preset.warning;
         new AlertDialog.Builder(this)
                 .setTitle(preset.label)
-                .setMessage("Executar " + where + "?\n\nadb shell " + cmd)
-                .setPositiveButton("Executar", (d, w) -> runCommand(cmd, preset.read))
+                .setMessage(message)
+                .setPositiveButton("Executar", (d, w) -> runCommand(cmd, preset))
                 .setNegativeButton("Cancelar", null)
                 .show();
     }
 
-    /** Executa {@code cmd} no aparelho alvo e, se {@code read} não for null, lê o valor resultante. */
-    private void runCommand(final String cmd, final String read) {
+    /**
+     * Executa {@code cmd} no aparelho alvo e, se o comando escolhido tem leitura, lê o valor
+     * resultante. Falhas conhecidas na saída (ex.: erros do dpm) viram erro em português.
+     */
+    private void runCommand(final String cmd, AdbCommands.Preset preset) {
+        final String read = preset.read;
+        final String name = preset.readName;
         if (isRemote()) {
             final List<Devices.Device> targets = selectedDevices();
             if (targets == null) return;
@@ -554,8 +568,9 @@ public class MainActivity extends Activity {
                 String[] out = read == null
                         ? Adb.remoteShell(this, d.host, d.port, portChangedFor(d.host), cmd)
                         : Adb.remoteShell(this, d.host, d.port, portChangedFor(d.host), cmd, read);
+                checkOutput(out[0]);
                 logOutput("[" + d.label() + "] ", out[0]);
-                return read == null ? "" : valueName(read) + " = " + out[1];
+                return read == null ? "" : name + " = " + out[1];
             });
             return;
         }
@@ -573,29 +588,34 @@ public class MainActivity extends Activity {
             }
             try {
                 if (root) {
-                    logOutput("", Adb.su(cmd));
+                    String out = Adb.su(cmd);
+                    checkOutput(out);
+                    logOutput("", out);
                     finish(Status.SUCCESS, read == null ? "Executado via root."
-                            : "Aplicado via root. " + valueName(read) + " = " + Adb.su(read));
+                            : "Aplicado via root. " + name + " = " + Adb.su(read));
                     return;
                 }
                 // 2) ADB pela Depuração sem fio
-                logOutput("", Adb.shell(this, cmd));
+                String out = Adb.shell(this, cmd);
+                checkOutput(out);
+                logOutput("", out);
                 String value = read == null ? null : Adb.shell(this, read);
                 Adb.grantSelfSecureSettings(this);
                 finish(Status.SUCCESS, read == null ? "Executado neste aparelho."
-                        : "Aplicado neste aparelho. " + valueName(read) + " = " + value);
+                        : "Aplicado neste aparelho. " + name + " = " + value);
             } catch (AdbPairingRequiredException e) {
                 finish(Status.ERROR, "Aparelho ainda não pareado. Conclua a etapa 1.");
             } catch (Exception e) {
-                finish(Status.ERROR, "Falha: " + Adb.describe(e));
+                finish(Status.ERROR, "Falha: " + commandError(e));
             }
         });
     }
 
     private void readValue() {
-        final String read = selectedPreset().read;
+        final AdbCommands.Preset preset = selectedPreset();
+        final String read = preset.read;
         if (read == null) return;
-        final String name = valueName(read);
+        final String name = preset.readName;
         if (isRemote()) {
             final List<Devices.Device> targets = selectedDevices();
             if (targets == null) return;
