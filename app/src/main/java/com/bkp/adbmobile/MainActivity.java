@@ -35,8 +35,10 @@ import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Date;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import io.github.muntashirakon.adb.AdbPairingRequiredException;
@@ -57,6 +59,8 @@ public class MainActivity extends Activity {
     private static final int REQUEST_LOG_FOLDER = 11;
     private static final int REQUEST_INSTALL_APK = 12;
     private static final int REQUEST_PUSH_FILE = 13;
+    private static final int REQUEST_PULL_FILE = 14;
+    private static final int REQUEST_SAVE_SCREENSHOT = 15;
     private static final String DEFAULT_PUSH_DIR = "/sdcard/Download";
     private static final String DEFAULT_MONITOR_PACKAGE = "br.com.backupautomacao.kiosk";
 
@@ -112,10 +116,12 @@ public class MainActivity extends Activity {
         Button saveLog = findViewById(R.id.saveLog);
         Button installApk = findViewById(R.id.installApk);
         Button pushFile = findViewById(R.id.pushFile);
+        Button pullFile = findViewById(R.id.pullFile);
+        Button screenshot = findViewById(R.id.screenshot);
         Button chooseApp = findViewById(R.id.chooseApp);
         Button appInfo = findViewById(R.id.appInfo);
         actions = new Button[]{notificationPairing, pairManual, run, read, saveLog, installApk, pushFile,
-                chooseApp, appInfo};
+                pullFile, screenshot, chooseApp, appInfo};
 
         hostField.setText(prefs.getString("host", ""));
         connectPortField.setText(prefs.getString("port", "5555"));
@@ -128,6 +134,8 @@ public class MainActivity extends Activity {
         saveLog.setOnClickListener(v -> chooseLogFile());
         installApk.setOnClickListener(v -> chooseApk());
         pushFile.setOnClickListener(v -> choosePushFile());
+        pullFile.setOnClickListener(v -> browseRemoteFiles());
+        screenshot.setOnClickListener(v -> captureScreen());
         chooseApp.setOnClickListener(v -> chooseApp());
         appInfo.setOnClickListener(v -> showAppInfo(monitorPackageField.getText().toString().trim()));
 
@@ -704,10 +712,12 @@ public class MainActivity extends Activity {
             if (targets == null) return;
             start(targetsLabel(targets) + " instalar " + app);
             log("Enviando o APK... se o alvo solicitar, autorize a depuração na tela dele.");
+            final Map<String, Adb.Progress> progressOf = progressItems(new ProgressBoard("Enviando o APK"), targets);
             runOnDevices(targets, "Instalado", d -> {
+                Adb.Progress progress = progressOf.get(d.address());
                 Adb.Shell shell = Adb.openRemote(this, d.host, d.port, portChangedFor(d.host));
                 try {
-                    shell.install(apk);
+                    shell.install(apk, progress);
                 } finally {
                     shell.close();
                 }
@@ -716,9 +726,10 @@ public class MainActivity extends Activity {
             return;
         }
         start("instalar " + app);
+        final Adb.Progress progress = new ProgressBoard("Enviando o APK").item("este aparelho");
         background(() -> {
             try {
-                Adb.openLocal(this).install(apk);
+                Adb.openLocal(this).install(apk, progress);
                 finish(Status.SUCCESS, "Instalado neste aparelho.");
             } catch (AdbPairingRequiredException e) {
                 finish(Status.ERROR, "Aparelho ainda não pareado. Conclua a etapa 1.");
@@ -815,10 +826,12 @@ public class MainActivity extends Activity {
             if (targets == null) return;
             start(targetsLabel(targets) + " push " + file.getName() + " " + remotePath);
             log("Enviando o arquivo... se o alvo solicitar, autorize a depuração na tela dele.");
+            final Map<String, Adb.Progress> progressOf = progressItems(new ProgressBoard("Enviando"), targets);
             runOnDevices(targets, "Enviado", d -> {
+                Adb.Progress progress = progressOf.get(d.address());
                 Adb.Shell shell = Adb.openRemote(this, d.host, d.port, portChangedFor(d.host));
                 try {
-                    shell.push(file, remotePath);
+                    shell.push(file, remotePath, progress);
                 } finally {
                     shell.close();
                 }
@@ -827,9 +840,10 @@ public class MainActivity extends Activity {
             return;
         }
         start("push " + file.getName() + " " + remotePath);
+        final Adb.Progress progress = new ProgressBoard("Enviando").item("este aparelho");
         background(() -> {
             try {
-                Adb.openLocal(this).push(file, remotePath);
+                Adb.openLocal(this).push(file, remotePath, progress);
                 finish(Status.SUCCESS, "Enviado neste aparelho: " + remotePath);
             } catch (AdbPairingRequiredException e) {
                 finish(Status.ERROR, "Aparelho ainda não pareado. Conclua a etapa 1.");
@@ -1007,11 +1021,7 @@ public class MainActivity extends Activity {
         AlertDialog.Builder b = new AlertDialog.Builder(this)
                 .setTitle(title)
                 .setView(scroll)
-                .setNeutralButton("Saída completa", (dlg, w) -> {
-                    append("dumpsys package " + d.pkg + ":");
-                    logOutput("", d.dumpsys);
-                    setStatus(Status.INFO, "Saída completa do dumpsys no registro abaixo.");
-                })
+                .setNeutralButton("Ações", (dlg, w) -> showAppActions(title, d))
                 .setNegativeButton("Fechar", null);
         if (!current) {
             b.setPositiveButton("Usar este pacote", (dlg, w) -> {
@@ -1025,6 +1035,340 @@ public class MainActivity extends Activity {
             });
         }
         b.show();
+    }
+
+    /** Menu de ações do app (as que fazem sentido no estado atual) e a saída completa do dumpsys. */
+    private void showAppActions(final String title, final AppInfo.Details d) {
+        final List<AppInfo.Action> list = AppInfo.actions(d);
+        String[] labels = new String[list.size() + 1];
+        for (int i = 0; i < list.size(); i++) labels[i] = list.get(i).label;
+        labels[list.size()] = "Ver saída completa (dumpsys)";
+        new AlertDialog.Builder(this)
+                .setTitle(title)
+                .setItems(labels, (dlg, which) -> {
+                    if (which == list.size()) {
+                        append("dumpsys package " + d.pkg + ":");
+                        logOutput("", d.dumpsys);
+                        setStatus(Status.INFO, "Saída completa do dumpsys no registro abaixo.");
+                        return;
+                    }
+                    AppInfo.Action a = list.get(which);
+                    if (!a.confirm) {
+                        runAppAction(title, d, a);
+                        return;
+                    }
+                    String warning = a == AppInfo.Action.CLEAR
+                            ? "Apaga todos os dados do app (configurações, login, banco de dados). Não dá para desfazer."
+                            : a == AppInfo.Action.UNINSTALL ? "Remove o app e todos os dados dele do aparelho."
+                            : "O app some da tela e para de abrir até ser ativado de novo.";
+                    new AlertDialog.Builder(this)
+                            .setTitle(a.label + "?")
+                            .setMessage(title + "\n" + d.pkg + "\n\n" + warning)
+                            .setPositiveButton(a.label, (x, y) -> runAppAction(title, d, a))
+                            .setNegativeButton("Cancelar", (x, y) -> showAppDetails(title, d))
+                            .show();
+                })
+                .setNegativeButton("Voltar", (dlg, w) -> showAppDetails(title, d))
+                .show();
+    }
+
+    /** Executa a ação no aparelho alvo e reabre as informações já atualizadas. */
+    private void runAppAction(final String title, final AppInfo.Details d, final AppInfo.Action a) {
+        withTargetShell("Ações do app", a.label.toLowerCase(Locale.ROOT) + " " + d.pkg, a.label + " falhou: ", shell -> {
+            String message = AppInfo.run(shell, d, a);
+            if (a == AppInfo.Action.UNINSTALL) {
+                finish(Status.SUCCESS, message);
+                return;
+            }
+            // "am start" e "force-stop" voltam antes do app terminar de abrir/fechar.
+            if (a == AppInfo.Action.OPEN || a == AppInfo.Action.STOP) Thread.sleep(1500);
+            AppInfo.Details updated = AppInfo.details(shell, d.pkg);
+            finish(Status.SUCCESS, message);
+            runOnUiThread(() -> showAppDetails(title, updated));
+        });
+    }
+
+    // ---------- Baixar arquivo ----------
+
+    /** Alvo do download escolhido no navegador (null = este aparelho) e o caminho do arquivo. */
+    private Object[] pullTarget;
+    private String pullPath;
+    private boolean pullPending;
+
+    /** Abre o navegador de pastas do aparelho alvo para escolher o arquivo a baixar. */
+    private void browseRemoteFiles() {
+        Object[] t = null;
+        if (isRemote()) {
+            t = singleTarget("Baixar arquivo");
+            if (t == null) return;
+        }
+        final Object[] target = t;
+        final String startDir = prefs.getString("pullDir", "/sdcard/Download");
+        start((target != null ? "[" + target[0] + ":" + target[1] + "] " : "") + "procurar arquivo em " + startDir);
+        background(() -> {
+            Adb.Shell shell = null;
+            try {
+                shell = openTarget(target);
+                String dir = startDir;
+                List<RemoteFiles.Entry> entries;
+                try {
+                    entries = RemoteFiles.list(shell, dir);
+                } catch (java.io.IOException e) {
+                    dir = "/sdcard";
+                    entries = RemoteFiles.list(shell, dir);
+                }
+                final Adb.Shell open = shell;
+                final String firstDir = dir;
+                final List<RemoteFiles.Entry> first = entries;
+                finish(Status.INFO, "Escolha o arquivo a baixar.");
+                runOnUiThread(() -> showRemoteBrowser(open, target, firstDir, first));
+            } catch (AdbPairingRequiredException e) {
+                if (shell != null) shell.close();
+                finish(Status.ERROR, target != null ? "O aparelho alvo exige pareamento. Conclua a etapa 1."
+                        : "Aparelho ainda não pareado. Conclua a etapa 1.");
+            } catch (Exception e) {
+                if (shell != null) shell.close();
+                finish(Status.ERROR, "Não foi possível abrir as pastas: " + Adb.describe(e));
+            }
+        });
+    }
+
+    private Adb.Shell openTarget(Object[] target) throws Exception {
+        return target != null
+                ? Adb.openRemote(this, (String) target[0], (Integer) target[1], portChangedFor((String) target[0]))
+                : Adb.openLocal(this);
+    }
+
+    // java.util.function só existe a partir do Android 7; o app roda desde o 5.
+    private interface FolderOpener {
+        void accept(String path);
+    }
+
+    private interface FolderShower {
+        void accept(String path, List<RemoteFiles.Entry> entries);
+    }
+
+    /** Lista da pasta; tocar numa pasta entra nela, tocar num arquivo escolhe onde salvar. */
+    private void showRemoteBrowser(final Adb.Shell shell, final Object[] target, String startDir,
+                                   List<RemoteFiles.Entry> startEntries) {
+        final String[] dir = {startDir};
+        final List<Object> items = new ArrayList<>();
+        final ArrayAdapter<Object> adapter = new ArrayAdapter<>(this, android.R.layout.simple_list_item_1, items);
+        final android.widget.ListView listView = new android.widget.ListView(this);
+        listView.setAdapter(adapter);
+        final TextView empty = new TextView(this);
+        float dp = getResources().getDisplayMetrics().density;
+        empty.setPadding((int) (24 * dp), (int) (12 * dp), (int) (24 * dp), 0);
+        empty.setText("Pasta vazia ou sem permissão de leitura.");
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.addView(empty);
+        box.addView(listView, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT,
+                (int) (getResources().getDisplayMetrics().heightPixels * 0.55)));
+
+        final String up = "⬆  .. (pasta acima)";
+        final AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle(startDir)
+                .setView(box)
+                .setNeutralButton("Ir para...", null)
+                .setNegativeButton("Cancelar", null)
+                .create();
+        final FolderShower show = (path, entries) -> {
+            dir[0] = path;
+            dialog.setTitle(path);
+            items.clear();
+            if (!path.equals("/")) items.add(up);
+            items.addAll(entries);
+            empty.setVisibility(entries.isEmpty() ? View.VISIBLE : View.GONE);
+            adapter.notifyDataSetChanged();
+            listView.setSelection(0);
+        };
+        final FolderOpener open = path -> {
+            setStatus(Status.INFO, "Abrindo " + path + "...");
+            background(() -> {
+                try {
+                    List<RemoteFiles.Entry> entries = RemoteFiles.list(shell, path);
+                    runOnUiThread(() -> {
+                        show.accept(path, entries);
+                        setStatus(Status.INFO, "Escolha o arquivo a baixar.");
+                    });
+                } catch (Exception e) {
+                    runOnUiThread(() -> setStatus(Status.ERROR, Adb.describe(e)));
+                }
+            });
+        };
+        listView.setOnItemClickListener((parent, view, position, id) -> {
+            Object item = items.get(position);
+            if (item == up) {
+                open.accept(RemoteFiles.parent(dir[0]));
+                return;
+            }
+            RemoteFiles.Entry e = (RemoteFiles.Entry) item;
+            String path = RemoteFiles.join(dir[0], e.name);
+            if (e.dir) {
+                open.accept(path);
+                return;
+            }
+            prefs.edit().putString("pullDir", dir[0]).apply();
+            pullTarget = target;
+            pullPath = path;
+            pullPending = true;
+            dialog.dismiss();
+            chooseWhereToSave(e.name);
+        });
+        // Fecha a conexão quando o navegador some (escolheu arquivo, cancelou ou tocou fora).
+        dialog.setOnDismissListener(x -> background(shell::close));
+        dialog.setOnShowListener(x -> dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener(v -> {
+            final EditText field = new EditText(this);
+            field.setSingleLine(true);
+            field.setText(dir[0]);
+            LinearLayout pad = new LinearLayout(this);
+            int p = (int) (20 * dp);
+            pad.setPadding(p, 0, p, 0);
+            pad.addView(field, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT));
+            new AlertDialog.Builder(this)
+                    .setTitle("Ir para a pasta")
+                    .setView(pad)
+                    .setPositiveButton("Abrir", (d2, w) -> {
+                        String path = field.getText().toString().trim();
+                        while (path.length() > 1 && path.endsWith("/")) path = path.substring(0, path.length() - 1);
+                        if (!path.startsWith("/")) {
+                            setStatus(Status.ERROR, "Informe o caminho completo (ex.: /sdcard/Download).");
+                            return;
+                        }
+                        open.accept(path);
+                    })
+                    .setNegativeButton("Cancelar", null)
+                    .show();
+        }));
+        show.accept(startDir, startEntries);
+        dialog.show();
+    }
+
+    private void chooseWhereToSave(String name) {
+        Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("*/*");
+        intent.putExtra(Intent.EXTRA_TITLE, name);
+        try {
+            startActivityForResult(intent, REQUEST_PULL_FILE);
+        } catch (Exception e) {
+            pullPending = false;
+            setStatus(Status.ERROR, "Nenhum seletor de arquivos disponível neste aparelho.");
+        }
+    }
+
+    /** Baixa o arquivo escolhido no navegador para o local escolhido no celular. */
+    private void pullFile(final Uri uri) {
+        if (uri == null) {
+            pullPending = false;
+            setStatus(Status.INFO, "Download cancelado.");
+            return;
+        }
+        if (!pullPending) {
+            // A tela foi recriada enquanto o seletor estava aberto e perdeu o arquivo escolhido.
+            DeviceLog.delete(getContentResolver(), uri);
+            setStatus(Status.ERROR, "Escolha o arquivo de novo em \"Baixar arquivo\".");
+            return;
+        }
+        pullPending = false;
+        final Object[] target = pullTarget;
+        final String path = pullPath;
+        final String name = fileName(uri);
+        start((target != null ? "[" + target[0] + ":" + target[1] + "] " : "") + "pull " + path);
+        final Adb.Progress progress = new ProgressBoard("Baixando").item(name);
+        background(() -> {
+            try {
+                Adb.Shell shell = openTarget(target);
+                long size;
+                try (OutputStream out = getContentResolver().openOutputStream(uri)) {
+                    if (out == null) throw new java.io.IOException("não foi possível gravar em " + name);
+                    size = shell.pull(path, out, progress);
+                } finally {
+                    shell.close();
+                }
+                finish(Status.SUCCESS, "Baixado: " + name + " (" + RemoteFiles.formatSize(size) + ")");
+            } catch (AdbPairingRequiredException e) {
+                DeviceLog.delete(getContentResolver(), uri);
+                finish(Status.ERROR, "Conclua o pareamento (etapa 1).");
+            } catch (Exception e) {
+                DeviceLog.delete(getContentResolver(), uri);
+                finish(Status.ERROR, "Falha no download: " + Adb.describe(e));
+            }
+        });
+    }
+
+    // ---------- Capturar tela ----------
+
+    private byte[] screenshotPng;
+
+    private void captureScreen() {
+        withTargetShell("Capturar tela", "capturar tela", "Não foi possível capturar a tela: ", shell -> {
+            final byte[] png = RemoteFiles.screenshot(shell);
+            final android.graphics.Bitmap bmp = android.graphics.BitmapFactory.decodeByteArray(png, 0, png.length);
+            if (bmp == null) throw new java.io.IOException("a imagem recebida não é um PNG válido");
+            finish(Status.SUCCESS, "Tela capturada (" + bmp.getWidth() + "x" + bmp.getHeight() + ").");
+            runOnUiThread(() -> showScreenshot(png, bmp));
+        });
+    }
+
+    private void showScreenshot(final byte[] png, android.graphics.Bitmap bmp) {
+        float dp = getResources().getDisplayMetrics().density;
+        android.widget.ImageView image = new android.widget.ImageView(this);
+        image.setImageBitmap(bmp);
+        image.setAdjustViewBounds(true);
+        image.setScaleType(android.widget.ImageView.ScaleType.FIT_CENTER);
+        int pad = (int) (12 * dp);
+        image.setPadding(pad, pad, pad, 0);
+        image.setMaxHeight((int) (getResources().getDisplayMetrics().heightPixels * 0.65));
+        new AlertDialog.Builder(this)
+                .setTitle("Tela do aparelho")
+                .setView(image)
+                .setPositiveButton("Salvar", (d, w) -> {
+                    screenshotPng = png;
+                    Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+                    intent.addCategory(Intent.CATEGORY_OPENABLE);
+                    intent.setType("image/png");
+                    intent.putExtra(Intent.EXTRA_TITLE, "tela_" + new SimpleDateFormat("yyyy-MM-dd_HH-mm-ss",
+                            Locale.getDefault()).format(new Date()) + ".png");
+                    try {
+                        startActivityForResult(intent, REQUEST_SAVE_SCREENSHOT);
+                    } catch (Exception e) {
+                        setStatus(Status.ERROR, "Nenhum seletor de arquivos disponível neste aparelho.");
+                    }
+                })
+                .setNeutralButton("Atualizar", (d, w) -> captureScreen())
+                .setNegativeButton("Fechar", null)
+                .show();
+    }
+
+    private void saveScreenshot(final Uri uri) {
+        final byte[] png = screenshotPng;
+        screenshotPng = null;
+        if (uri == null) {
+            setStatus(Status.INFO, "Captura não salva.");
+            return;
+        }
+        if (png == null) {
+            DeviceLog.delete(getContentResolver(), uri);
+            setStatus(Status.ERROR, "Capture a tela de novo para salvar.");
+            return;
+        }
+        final String name = fileName(uri);
+        background(() -> {
+            try (OutputStream out = getContentResolver().openOutputStream(uri)) {
+                if (out == null) throw new java.io.IOException("não foi possível gravar em " + name);
+                out.write(png);
+                runOnUiThread(() -> {
+                    append("Captura salva: " + name);
+                    setStatus(Status.SUCCESS, "Captura salva: " + name);
+                });
+            } catch (Exception e) {
+                DeviceLog.delete(getContentResolver(), uri);
+                runOnUiThread(() -> setStatus(Status.ERROR, "Não foi possível salvar: " + Adb.describe(e)));
+            }
+        });
     }
 
     // ---------- Log do aparelho ----------
@@ -1061,6 +1405,14 @@ public class MainActivity extends Activity {
         }
         if (requestCode == REQUEST_PUSH_FILE) {
             onPushFileChosen(resultCode == RESULT_OK && data != null ? data.getData() : null);
+            return;
+        }
+        if (requestCode == REQUEST_PULL_FILE) {
+            pullFile(resultCode == RESULT_OK && data != null ? data.getData() : null);
+            return;
+        }
+        if (requestCode == REQUEST_SAVE_SCREENSHOT) {
+            saveScreenshot(resultCode == RESULT_OK && data != null ? data.getData() : null);
             return;
         }
         if (requestCode != REQUEST_SAVE_LOG) return;
@@ -1239,9 +1591,87 @@ public class MainActivity extends Activity {
         for (Button b : actions) b.setEnabled(false);
     }
 
+    /** Progresso em andamento; finish() o encerra para não sobrescrever a mensagem final. */
+    private ProgressBoard activeBoard;
+
+    /**
+     * Mostra no status a porcentagem de envios/downloads ("Enviando: Quiosque 1 45% · Quiosque 2 80%"),
+     * sem redesenhar a tela a cada bloco. Criar no thread da tela, depois de start().
+     */
+    private final class ProgressBoard {
+        private final String verb;
+        private final Map<String, long[]> items = new LinkedHashMap<>();
+        private long lastPost;
+
+        ProgressBoard(String verb) {
+            this.verb = verb;
+            activeBoard = this;
+        }
+
+        Adb.Progress item(final String name) {
+            synchronized (this) {
+                items.put(name, new long[]{0, 0});
+            }
+            return (done, total) -> update(name, done, total);
+        }
+
+        private void update(String name, long done, long total) {
+            final String text;
+            synchronized (this) {
+                long[] v = items.get(name);
+                if (v == null) return;
+                v[0] = done;
+                v[1] = total;
+                long now = android.os.SystemClock.uptimeMillis();
+                if (now - lastPost < 300 && done < total) return;
+                lastPost = now;
+                text = render();
+            }
+            runOnUiThread(() -> {
+                if (activeBoard == this) setStatus(Status.INFO, text);
+            });
+        }
+
+        private String render() {
+            if (items.size() == 1) {
+                long[] v = items.values().iterator().next();
+                return verb + "... " + percent(v) + "% (" + RemoteFiles.formatSize(v[0]) + " de "
+                        + RemoteFiles.formatSize(v[1]) + ")";
+            }
+            if (items.size() > 4) {
+                int sum = 0, done = 0;
+                for (long[] v : items.values()) {
+                    sum += percent(v);
+                    if (v[1] > 0 && v[0] >= v[1]) done++;
+                }
+                return verb + " para " + items.size() + " aparelhos: " + (sum / items.size()) + "% ("
+                        + done + " concluídos)";
+            }
+            StringBuilder b = new StringBuilder(verb).append(":");
+            String sep = " ";
+            for (Map.Entry<String, long[]> e : items.entrySet()) {
+                b.append(sep).append(e.getKey()).append(' ').append(percent(e.getValue())).append('%');
+                sep = " · ";
+            }
+            return b.toString();
+        }
+
+        private int percent(long[] v) {
+            return v[1] <= 0 ? 0 : (int) (v[0] * 100 / v[1]);
+        }
+    }
+
+    /** Registra todos os aparelhos no painel antes de começar (para a lista sair completa). */
+    private static Map<String, Adb.Progress> progressItems(ProgressBoard board, List<Devices.Device> targets) {
+        Map<String, Adb.Progress> map = new LinkedHashMap<>();
+        for (Devices.Device d : targets) map.put(d.address(), board.item(d.label()));
+        return map;
+    }
+
     /** Fim de uma operação (chamado de qualquer thread). */
     private void finish(Status s, String message) {
         runOnUiThread(() -> {
+            activeBoard = null;
             append((s == Status.ERROR ? "ERRO: " : s == Status.SUCCESS ? "OK: " : "") + message);
             setStatus(s, message);
             for (Button b : actions) b.setEnabled(true);

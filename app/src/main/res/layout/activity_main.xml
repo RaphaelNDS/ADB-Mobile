@@ -391,11 +391,34 @@
                     android:layout_marginTop="10dp"
                     android:text="Instalar APK (.apk)" />
 
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:orientation="horizontal">
+
+                    <Button
+                        android:id="@+id/pushFile"
+                        style="@style/ButtonOutline"
+                        android:layout_width="0dp"
+                        android:layout_weight="1"
+                        android:layout_marginEnd="5dp"
+                        android:text="Enviar arquivo" />
+
+                    <Button
+                        android:id="@+id/pullFile"
+                        style="@style/ButtonOutline"
+                        android:layout_width="0dp"
+                        android:layout_weight="1"
+                        android:layout_marginStart="5dp"
+                        android:text="Baixar arquivo" />
+                </LinearLayout>
+
                 <Button
-                    android:id="@+id/pushFile"
+                    android:id="@+id/screenshot"
                     style="@style/ButtonOutline"
                     android:layout_marginTop="10dp"
-                    android:text="Enviar arquivo" />
+                    android:text="Capturar tela" />
             </LinearLayout>
 
             <!-- 3. Log automático -->

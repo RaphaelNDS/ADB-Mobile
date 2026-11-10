@@ -214,12 +214,20 @@ public final class Adb {
         void stream(String command, OutputStream out) throws Exception;
 
         /** Instala o APK no aparelho (atualiza se já existir, mantendo os dados). Devolve a saída do pm. */
-        String install(File apk) throws Exception;
+        String install(File apk, Progress progress) throws Exception;
 
         /** Copia o arquivo para {@code remotePath} no aparelho (como "adb push"), sobrescrevendo. */
-        void push(File file, String remotePath) throws Exception;
+        void push(File file, String remotePath, Progress progress) throws Exception;
+
+        /** Copia o arquivo do aparelho para {@code out} (como "adb pull"). Devolve o tamanho. */
+        long pull(String remotePath, OutputStream out, Progress progress) throws Exception;
 
         void close();
+    }
+
+    /** Avisada conforme os bytes de um envio/download passam (pode ser null). */
+    public interface Progress {
+        void update(long done, long total);
     }
 
     /** Avisada quando a porta informada não respondeu e outra porta do mesmo IP funcionou. */
@@ -369,13 +377,18 @@ public final class Adb {
             }
 
             @Override
-            public String install(File apk) throws Exception {
-                return Adb.install(manager, apk);
+            public String install(File apk, Progress progress) throws Exception {
+                return Adb.install(manager, apk, progress);
             }
 
             @Override
-            public void push(File file, String remotePath) throws Exception {
-                Adb.push(manager, file, remotePath);
+            public void push(File file, String remotePath, Progress progress) throws Exception {
+                Adb.push(manager, file, remotePath, progress);
+            }
+
+            @Override
+            public long pull(String remotePath, OutputStream out, Progress progress) throws Exception {
+                return Adb.pull(manager, remotePath, out, progress);
             }
 
             @Override
@@ -419,14 +432,26 @@ public final class Adb {
             }
 
             @Override
-            public String install(File apk) throws Exception {
+            public String install(File apk, Progress progress) throws Exception {
                 if (root == null) run("true");
                 if (root) return installResult(su("pm install -r \"" + apk.getAbsolutePath() + "\" 2>&1"));
-                return Adb.install(local(context), apk);
+                return Adb.install(local(context), apk, progress);
             }
 
             @Override
-            public void push(File file, String remotePath) throws Exception {
+            public long pull(String remotePath, OutputStream out, Progress progress) throws Exception {
+                if (root == null) run("true");
+                if (!root) return Adb.pull(local(context), remotePath, out, progress);
+                long size = remoteSize(su(sizeCommand(remotePath)), remotePath);
+                Process p = new ProcessBuilder("su", "-c", "cat " + quote(remotePath)).start();
+                long got = copy(p.getInputStream(), out, size, progress);
+                p.waitFor();
+                if (got < size) throw new IOException("Arquivo incompleto (" + got + " de " + size + " bytes).");
+                return size;
+            }
+
+            @Override
+            public void push(File file, String remotePath, Progress progress) throws Exception {
                 if (root == null) run("true");
                 if (root) {
                     String dest = quote(remotePath);
@@ -437,7 +462,7 @@ public final class Adb {
                     if (!out.endsWith("EXIT:0")) throw new IOException(out.replace("EXIT:", "código ").trim());
                     return;
                 }
-                Adb.push(local(context), file, remotePath);
+                Adb.push(local(context), file, remotePath, progress);
             }
 
             @Override
@@ -577,10 +602,10 @@ public final class Adb {
      * Envia o APK para /data/local/tmp do aparelho e instala com "pm install -r" (o mesmo que o
      * "adb install" faz em aparelhos antigos; funciona do Android 5 em diante).
      */
-    private static String install(AdbManager manager, File apk) throws Exception {
+    private static String install(AdbManager manager, File apk, Progress progress) throws Exception {
         String tmp = "/data/local/tmp/adbmobile-" + System.currentTimeMillis() + ".apk";
         try {
-            push(manager, apk, tmp);
+            push(manager, apk, tmp, progress);
             return installResult(run(manager, "pm install -r " + tmp + " 2>&1"));
         } finally {
             try {
@@ -596,8 +621,10 @@ public final class Adb {
      * Envia o arquivo pelo ADB gravando com "cat" no destino (o "adb push" usa o serviço sync, que o
      * libadb não implementa). Cria a pasta se preciso e confere o tamanho no fim.
      */
-    private static void push(AdbManager manager, File file, String remotePath) throws Exception {
+    private static void push(AdbManager manager, File file, String remotePath, Progress progress)
+            throws Exception {
         long size = file.length();
+        long sent = 0;
         String dest = quote(remotePath);
         int slash = remotePath.lastIndexOf('/');
         if (slash > 0) run(manager, "mkdir -p " + quote(remotePath.substring(0, slash)));
@@ -607,13 +634,82 @@ public final class Adb {
             // e o aparelho derruba a conexão: os blocos precisam caber num pacote só.
             byte[] buf = new byte[manager.getAdbConnection().getMaxData()];
             int n;
-            while ((n = in.read(buf)) > 0) stream.write(buf, 0, n);
+            while ((n = in.read(buf)) > 0) {
+                stream.write(buf, 0, n);
+                sent += n;
+                if (progress != null) progress.update(sent, size);
+            }
             // Escrita vazia: só espera o aparelho confirmar o último bloco.
             stream.write(buf, 0, 0);
         } finally {
             stream.close();
         }
         waitForSize(manager, dest, size);
+    }
+
+    // ---------- Download de arquivo ----------
+
+    /** Tamanho do arquivo, ou "X" se não existe / não é arquivo / não dá para ler. */
+    private static String sizeCommand(String remotePath) {
+        String q = quote(remotePath);
+        return "if [ -f " + q + " ] && [ -r " + q + " ]; then stat -L -c %s " + q + " 2>/dev/null || wc -c < "
+                + q + "; else echo X; fi";
+    }
+
+    private static long remoteSize(String out, String remotePath) throws IOException {
+        String s = out.trim();
+        if (!s.matches("\\d+")) {
+            throw new IOException("Arquivo não encontrado ou sem permissão de leitura: " + remotePath);
+        }
+        return Long.parseLong(s);
+    }
+
+    /**
+     * Lê o arquivo com "cat" pelo serviço exec (binário, sem terminal no meio). Lê exatamente o
+     * tamanho informado antes: esperar o fim do stream pode travar no libadb 3.1.1 (ver stream()).
+     */
+    private static long pull(AdbManager manager, String remotePath, OutputStream out, Progress progress)
+            throws Exception {
+        long size = remoteSize(run(manager, sizeCommand(remotePath)), remotePath);
+        if (size == 0) return 0;
+        final AdbStream stream = manager.openStream("exec:" + ascii("cat " + quote(remotePath)));
+        // Não usa stream.openInputStream(): ele devolve -1 assim que o aparelho fecha o stream,
+        // mesmo com dados ainda na fila (arquivo cortado). O read() do AdbStream esvazia a fila antes.
+        InputStream in = new InputStream() {
+            @Override
+            public int read() throws IOException {
+                byte[] one = new byte[1];
+                return read(one, 0, 1) == 1 ? one[0] & 0xFF : -1;
+            }
+
+            @Override
+            public int read(byte[] b, int off, int len) throws IOException {
+                return stream.read(b, off, len);
+            }
+        };
+        long got = 0;
+        try {
+            got = copy(in, out, size, progress);
+        } catch (IOException e) {
+            if (!stream.isClosed()) throw e;
+        } finally {
+            stream.close();
+        }
+        if (got < size) throw new IOException("Arquivo incompleto (" + got + " de " + size + " bytes).");
+        return size;
+    }
+
+    /** Copia até {@code size} bytes de {@code in} para {@code out}; devolve quantos copiou. */
+    private static long copy(InputStream in, OutputStream out, long size, Progress progress) throws IOException {
+        byte[] buf = new byte[65536];
+        long got = 0;
+        int n;
+        while (got < size && (n = in.read(buf, 0, (int) Math.min(buf.length, size - got))) > 0) {
+            out.write(buf, 0, n);
+            got += n;
+            if (progress != null) progress.update(got, size);
+        }
+        return got;
     }
 
     /**
