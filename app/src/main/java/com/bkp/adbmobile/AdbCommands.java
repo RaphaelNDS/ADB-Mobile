@@ -10,6 +10,13 @@ public final class AdbCommands {
     /** Marcador trocado pelo pacote do app ao escolher o comando. */
     public static final String PACKAGE = "{pacote}";
 
+    /** Componente administrador do app Kiosk (Device Owner). */
+    private static final String KIOSK_ADMIN =
+            "br.com.backupautomacao.kiosk/br.com.backupautomacao.kiosk.admin.AdminReceiver";
+
+    /** Mostra o Device Owner atual (Android 10+). */
+    private static final String DEVICE_OWNER_READ = "dpm list-owners";
+
     public static final class Preset {
         public final String label;
         public final String command;
@@ -65,6 +72,12 @@ public final class AdbCommands {
             run("Forçar parada do app", "am force-stop " + PACKAGE),
             danger("Limpar dados do app", "pm clear " + PACKAGE),
             danger("Desinstalar app", "pm uninstall " + PACKAGE),
+
+            // Kiosk (Device Owner)
+            new Preset("Kiosk: definir como Device Owner",
+                    "dpm set-device-owner " + KIOSK_ADMIN, DEVICE_OWNER_READ, true),
+            new Preset("Kiosk: remover Device Owner",
+                    "dpm remove-active-admin " + KIOSK_ADMIN, DEVICE_OWNER_READ, true),
 
             // Configurações
             set("Tela: desligar após 30 min", "settings put system screen_off_timeout 1800000",
