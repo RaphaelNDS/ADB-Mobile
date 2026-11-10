@@ -56,6 +56,8 @@ public class MainActivity extends Activity {
     private static final int REQUEST_SAVE_LOG = 10;
     private static final int REQUEST_LOG_FOLDER = 11;
     private static final int REQUEST_INSTALL_APK = 12;
+    private static final int REQUEST_PUSH_FILE = 13;
+    private static final String DEFAULT_PUSH_DIR = "/sdcard/Download";
     private static final String DEFAULT_MONITOR_PACKAGE = "br.com.backupautomacao.kiosk";
 
     private final SimpleDateFormat clock = new SimpleDateFormat("HH:mm:ss", Locale.getDefault());
@@ -109,7 +111,11 @@ public class MainActivity extends Activity {
         readButton = read;
         Button saveLog = findViewById(R.id.saveLog);
         Button installApk = findViewById(R.id.installApk);
-        actions = new Button[]{notificationPairing, pairManual, run, read, saveLog, installApk};
+        Button pushFile = findViewById(R.id.pushFile);
+        Button chooseApp = findViewById(R.id.chooseApp);
+        Button appInfo = findViewById(R.id.appInfo);
+        actions = new Button[]{notificationPairing, pairManual, run, read, saveLog, installApk, pushFile,
+                chooseApp, appInfo};
 
         hostField.setText(prefs.getString("host", ""));
         connectPortField.setText(prefs.getString("port", "5555"));
@@ -121,6 +127,9 @@ public class MainActivity extends Activity {
         read.setOnClickListener(v -> readValue());
         saveLog.setOnClickListener(v -> chooseLogFile());
         installApk.setOnClickListener(v -> chooseApk());
+        pushFile.setOnClickListener(v -> choosePushFile());
+        chooseApp.setOnClickListener(v -> chooseApp());
+        appInfo.setOnClickListener(v -> showAppInfo(monitorPackageField.getText().toString().trim()));
 
         monitorPackageField = findViewById(R.id.monitorPackage);
         logFolderLabel = findViewById(R.id.logFolder);
@@ -719,6 +728,305 @@ public class MainActivity extends Activity {
         });
     }
 
+    // ---------- Enviar arquivo ----------
+
+    /** Escolhe qualquer arquivo no armazenamento do celular para enviar (como "adb push"). */
+    private void choosePushFile() {
+        if (isRemote() && selectedDevices() == null) return;
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("*/*");
+        try {
+            startActivityForResult(intent, REQUEST_PUSH_FILE);
+        } catch (Exception e) {
+            setStatus(Status.ERROR, "Nenhum seletor de arquivos disponível neste aparelho.");
+        }
+    }
+
+    /** Copia o arquivo escolhido para o cache e pergunta a pasta de destino. */
+    private void onPushFileChosen(final Uri uri) {
+        if (uri == null) {
+            setStatus(Status.INFO, "Envio cancelado.");
+            return;
+        }
+        // Barra no nome criaria subpastas no destino.
+        final String name = fileName(uri).replace('/', '_');
+        setStatus(Status.INFO, "Lendo " + name + "...");
+        background(() -> {
+            File dir = new File(getCacheDir(), "push");
+            File[] old = dir.listFiles();
+            if (old != null) for (File f : old) f.delete();
+            dir.mkdirs();
+            final File file = new File(dir, name);
+            try (InputStream in = getContentResolver().openInputStream(uri);
+                 OutputStream out = new FileOutputStream(file)) {
+                if (in == null) throw new java.io.IOException("não foi possível abrir o arquivo");
+                byte[] buf = new byte[65536];
+                int n;
+                while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
+            } catch (Exception e) {
+                runOnUiThread(() -> setStatus(Status.ERROR, "Não foi possível ler " + name + ": " + Adb.describe(e)));
+                return;
+            }
+            runOnUiThread(() -> confirmPush(file));
+        });
+    }
+
+    private void confirmPush(final File file) {
+        String where = "neste aparelho";
+        if (isRemote()) {
+            List<Devices.Device> targets = selectedDevices();
+            if (targets == null) return;
+            where = targets.size() > 1 ? "em " + targets.size() + " aparelhos" : "em " + targets.get(0).label();
+        }
+        final EditText dirField = new EditText(this);
+        dirField.setSingleLine(true);
+        dirField.setText(prefs.getString("pushDir", DEFAULT_PUSH_DIR));
+        LinearLayout box = new LinearLayout(this);
+        int pad = (int) (20 * getResources().getDisplayMetrics().density);
+        box.setPadding(pad, 0, pad, 0);
+        box.addView(dirField, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT));
+        setStatus(Status.INFO, "Confirme o envio.");
+        new AlertDialog.Builder(this)
+                .setTitle("Enviar arquivo")
+                .setMessage("Enviar " + where + "?\n\n" + file.getName() + " ("
+                        + String.format(Locale.getDefault(), "%.1f MB", file.length() / 1048576.0)
+                        + ")\n\nPasta de destino no aparelho (arquivo com o mesmo nome é substituído):")
+                .setView(box)
+                .setPositiveButton("Enviar", (d, w) -> {
+                    String dir = dirField.getText().toString().trim();
+                    while (dir.length() > 1 && dir.endsWith("/")) dir = dir.substring(0, dir.length() - 1);
+                    if (!dir.startsWith("/")) {
+                        setStatus(Status.ERROR, "Informe a pasta de destino com o caminho completo (ex.: "
+                                + DEFAULT_PUSH_DIR + ").");
+                        return;
+                    }
+                    prefs.edit().putString("pushDir", dir).apply();
+                    pushFile(file, (dir.equals("/") ? "" : dir) + "/" + file.getName());
+                })
+                .setNegativeButton("Cancelar", (d, w) -> setStatus(Status.INFO, "Envio cancelado."))
+                .show();
+    }
+
+    private void pushFile(final File file, final String remotePath) {
+        if (isRemote()) {
+            final List<Devices.Device> targets = selectedDevices();
+            if (targets == null) return;
+            start(targetsLabel(targets) + " push " + file.getName() + " " + remotePath);
+            log("Enviando o arquivo... se o alvo solicitar, autorize a depuração na tela dele.");
+            runOnDevices(targets, "Enviado", d -> {
+                Adb.Shell shell = Adb.openRemote(this, d.host, d.port, portChangedFor(d.host));
+                try {
+                    shell.push(file, remotePath);
+                } finally {
+                    shell.close();
+                }
+                return "enviado para " + remotePath;
+            });
+            return;
+        }
+        start("push " + file.getName() + " " + remotePath);
+        background(() -> {
+            try {
+                Adb.openLocal(this).push(file, remotePath);
+                finish(Status.SUCCESS, "Enviado neste aparelho: " + remotePath);
+            } catch (AdbPairingRequiredException e) {
+                finish(Status.ERROR, "Aparelho ainda não pareado. Conclua a etapa 1.");
+            } catch (Exception e) {
+                finish(Status.ERROR, "Falha no envio: " + Adb.describe(e));
+            }
+        });
+    }
+
+    // ---------- Apps do aparelho ----------
+
+    /** Tarefa que usa uma sessão no aparelho alvo (roda em segundo plano). */
+    private interface ShellTask {
+        void run(Adb.Shell shell) throws Exception;
+    }
+
+    /**
+     * Abre o aparelho alvo (este ou o único marcado), roda {@code task} e fecha. Erros viram status
+     * de erro com {@code what} na frente.
+     */
+    private void withTargetShell(String what, String line, final String errorPrefix, final ShellTask task) {
+        Object[] t = null;
+        if (isRemote()) {
+            t = singleTarget(what);
+            if (t == null) return;
+        }
+        final Object[] target = t;
+        start((target != null ? "[" + target[0] + ":" + target[1] + "] " : "") + line);
+        background(() -> {
+            try {
+                Adb.Shell shell = target != null
+                        ? Adb.openRemote(this, (String) target[0], (Integer) target[1], portChangedFor((String) target[0]))
+                        : Adb.openLocal(this);
+                try {
+                    task.run(shell);
+                } finally {
+                    shell.close();
+                }
+            } catch (AdbPairingRequiredException e) {
+                finish(Status.ERROR, target != null ? "O aparelho alvo exige pareamento. Conclua a etapa 1."
+                        : "Aparelho ainda não pareado. Conclua a etapa 1.");
+            } catch (Exception e) {
+                finish(Status.ERROR, errorPrefix + Adb.describe(e));
+            }
+        });
+    }
+
+    /** Busca os apps instalados no aparelho alvo e abre a lista para escolher um. */
+    private void chooseApp() {
+        final boolean local = !isRemote();
+        withTargetShell("Escolher app", "listar apps instalados", "Não foi possível listar os apps: ", shell -> {
+            List<AppInfo.App> apps = AppInfo.list(shell);
+            // Neste aparelho dá para mostrar o nome dos apps; no remoto o ADB só informa o pacote.
+            if (local) {
+                PackageManager pm = getPackageManager();
+                for (AppInfo.App a : apps) {
+                    try {
+                        a.label = pm.getApplicationLabel(pm.getApplicationInfo(a.pkg, 0)).toString();
+                    } catch (Exception ignored) {
+                    }
+                }
+                AppInfo.sort(apps);
+            }
+            int user = 0;
+            for (AppInfo.App a : apps) if (!a.system) user++;
+            finish(Status.INFO, apps.size() + " apps encontrados (" + user + " instalados pelo usuário).");
+            runOnUiThread(() -> showAppPicker(apps));
+        });
+    }
+
+    private void showAppPicker(final List<AppInfo.App> apps) {
+        float dp = getResources().getDisplayMetrics().density;
+        int pad = (int) (20 * dp);
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(pad, (int) (8 * dp), pad, 0);
+
+        final EditText search = new EditText(this);
+        search.setSingleLine(true);
+        search.setHint("Buscar por nome ou pacote");
+        box.addView(search);
+
+        final CheckBox showSystem = new CheckBox(this);
+        showSystem.setText("Mostrar apps do sistema");
+        box.addView(showSystem);
+
+        final android.widget.ListView listView = new android.widget.ListView(this);
+        final List<AppInfo.App> shown = new ArrayList<>();
+        final ArrayAdapter<AppInfo.App> adapter = new ArrayAdapter<>(this,
+                android.R.layout.simple_list_item_1, shown);
+        listView.setAdapter(adapter);
+        box.addView(listView, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT,
+                (int) (getResources().getDisplayMetrics().heightPixels * 0.5)));
+
+        final Runnable filter = () -> {
+            String q = search.getText().toString().trim().toLowerCase(Locale.ROOT);
+            shown.clear();
+            for (AppInfo.App a : apps) {
+                if (a.system && !showSystem.isChecked() && !a.foreground) continue;
+                if (!q.isEmpty() && !a.pkg.toLowerCase(Locale.ROOT).contains(q)
+                        && (a.label == null || !a.label.toLowerCase(Locale.ROOT).contains(q))) continue;
+                shown.add(a);
+            }
+            adapter.notifyDataSetChanged();
+        };
+        search.addTextChangedListener(new android.text.TextWatcher() {
+            @Override
+            public void beforeTextChanged(CharSequence s, int start, int count, int after) {
+            }
+
+            @Override
+            public void onTextChanged(CharSequence s, int start, int before, int count) {
+            }
+
+            @Override
+            public void afterTextChanged(android.text.Editable s) {
+                filter.run();
+            }
+        });
+        showSystem.setOnCheckedChangeListener((b, checked) -> filter.run());
+        filter.run();
+
+        final AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle("Escolher app")
+                .setView(box)
+                .setNegativeButton("Fechar", null)
+                .show();
+        listView.setOnItemClickListener((parent, view, position, id) -> {
+            dialog.dismiss();
+            showAppInfo(shown.get(position).pkg);
+        });
+    }
+
+    /** Lê e mostra as informações do pacote no aparelho alvo. */
+    private void showAppInfo(final String pkg) {
+        if (pkg.isEmpty()) {
+            setStatus(Status.ERROR, "Informe o pacote ou toque em \"Escolher app\".");
+            return;
+        }
+        if (!AppInfo.validPackage(pkg)) {
+            setStatus(Status.ERROR, "Pacote inválido: " + pkg);
+            return;
+        }
+        final boolean local = !isRemote();
+        withTargetShell("Informações do app", "informações de " + pkg, "Não foi possível ler o app: ", shell -> {
+            AppInfo.Details d = AppInfo.details(shell, pkg);
+            String title = pkg;
+            if (local) {
+                try {
+                    PackageManager pm = getPackageManager();
+                    title = pm.getApplicationLabel(pm.getApplicationInfo(pkg, 0)).toString();
+                } catch (Exception ignored) {
+                }
+            }
+            final String dialogTitle = title;
+            finish(Status.INFO, "Informações de " + pkg + " carregadas.");
+            runOnUiThread(() -> showAppDetails(dialogTitle, d));
+        });
+    }
+
+    private void showAppDetails(String title, final AppInfo.Details d) {
+        float dp = getResources().getDisplayMetrics().density;
+        TextView text = new TextView(this);
+        text.setText(d.text);
+        text.setTextIsSelectable(true);
+        text.setTextSize(13);
+        text.setTextColor(color(R.color.text_primary));
+        text.setLineSpacing(2 * dp, 1);
+        int pad = (int) (20 * dp);
+        text.setPadding(pad, (int) (8 * dp), pad, (int) (8 * dp));
+        android.widget.ScrollView scroll = new android.widget.ScrollView(this);
+        scroll.addView(text);
+
+        boolean current = d.pkg.equals(monitorPackageField.getText().toString().trim());
+        AlertDialog.Builder b = new AlertDialog.Builder(this)
+                .setTitle(title)
+                .setView(scroll)
+                .setNeutralButton("Saída completa", (dlg, w) -> {
+                    append("dumpsys package " + d.pkg + ":");
+                    logOutput("", d.dumpsys);
+                    setStatus(Status.INFO, "Saída completa do dumpsys no registro abaixo.");
+                })
+                .setNegativeButton("Fechar", null);
+        if (!current) {
+            b.setPositiveButton("Usar este pacote", (dlg, w) -> {
+                if (!monitorPackageField.isEnabled()) {
+                    setStatus(Status.ERROR, "Pare o monitoramento antes de trocar o pacote.");
+                    return;
+                }
+                monitorPackageField.setText(d.pkg);
+                prefs.edit().putString("monitorPackage", d.pkg).apply();
+                setStatus(Status.SUCCESS, "Pacote definido: " + d.pkg);
+            });
+        }
+        b.show();
+    }
+
     // ---------- Log do aparelho ----------
 
     /** Abre o seletor do sistema para escolher onde salvar o log (.txt). */
@@ -749,6 +1057,10 @@ public class MainActivity extends Activity {
         }
         if (requestCode == REQUEST_INSTALL_APK) {
             onApkChosen(resultCode == RESULT_OK && data != null ? data.getData() : null);
+            return;
+        }
+        if (requestCode == REQUEST_PUSH_FILE) {
+            onPushFileChosen(resultCode == RESULT_OK && data != null ? data.getData() : null);
             return;
         }
         if (requestCode != REQUEST_SAVE_LOG) return;

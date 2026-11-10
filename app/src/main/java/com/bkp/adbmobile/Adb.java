@@ -216,6 +216,9 @@ public final class Adb {
         /** Instala o APK no aparelho (atualiza se já existir, mantendo os dados). Devolve a saída do pm. */
         String install(File apk) throws Exception;
 
+        /** Copia o arquivo para {@code remotePath} no aparelho (como "adb push"), sobrescrevendo. */
+        void push(File file, String remotePath) throws Exception;
+
         void close();
     }
 
@@ -371,6 +374,11 @@ public final class Adb {
             }
 
             @Override
+            public void push(File file, String remotePath) throws Exception {
+                Adb.push(manager, file, remotePath);
+            }
+
+            @Override
             public void close() {
                 release(manager);
             }
@@ -415,6 +423,21 @@ public final class Adb {
                 if (root == null) run("true");
                 if (root) return installResult(su("pm install -r \"" + apk.getAbsolutePath() + "\" 2>&1"));
                 return Adb.install(local(context), apk);
+            }
+
+            @Override
+            public void push(File file, String remotePath) throws Exception {
+                if (root == null) run("true");
+                if (root) {
+                    String dest = quote(remotePath);
+                    int slash = remotePath.lastIndexOf('/');
+                    String mkdir = slash > 0 ? "mkdir -p " + quote(remotePath.substring(0, slash)) + "; " : "";
+                    String out = su(mkdir + "cp " + quote(file.getAbsolutePath()) + " " + dest
+                            + " && chmod 664 " + dest + " 2>&1; echo \"EXIT:$?\"");
+                    if (!out.endsWith("EXIT:0")) throw new IOException(out.replace("EXIT:", "código ").trim());
+                    return;
+                }
+                Adb.push(local(context), file, remotePath);
             }
 
             @Override
@@ -485,7 +508,7 @@ public final class Adb {
      * memória (o logcat de alguns aparelhos passa de dezenas de MB).
      */
     private static void stream(AdbManager manager, String command, OutputStream sink) throws Exception {
-        AdbStream stream = manager.openStream("shell:" + command + "; echo " + END_MARKER);
+        AdbStream stream = manager.openStream("shell:" + ascii(command) + "; echo " + END_MARKER);
         MarkerFilter out = new MarkerFilter(sink);
         try {
             InputStream in = stream.openInputStream();
@@ -555,10 +578,31 @@ public final class Adb {
      * "adb install" faz em aparelhos antigos; funciona do Android 5 em diante).
      */
     private static String install(AdbManager manager, File apk) throws Exception {
-        long size = apk.length();
         String tmp = "/data/local/tmp/adbmobile-" + System.currentTimeMillis() + ".apk";
-        AdbStream stream = manager.openStream("exec:cat > " + tmp);
-        try (InputStream in = new FileInputStream(apk)) {
+        try {
+            push(manager, apk, tmp);
+            return installResult(run(manager, "pm install -r " + tmp + " 2>&1"));
+        } finally {
+            try {
+                run(manager, "rm -f " + tmp);
+            } catch (Exception ignored) {
+            }
+        }
+    }
+
+    // ---------- Envio de arquivo ----------
+
+    /**
+     * Envia o arquivo pelo ADB gravando com "cat" no destino (o "adb push" usa o serviço sync, que o
+     * libadb não implementa). Cria a pasta se preciso e confere o tamanho no fim.
+     */
+    private static void push(AdbManager manager, File file, String remotePath) throws Exception {
+        long size = file.length();
+        String dest = quote(remotePath);
+        int slash = remotePath.lastIndexOf('/');
+        if (slash > 0) run(manager, "mkdir -p " + quote(remotePath.substring(0, slash)));
+        AdbStream stream = manager.openStream("exec:" + ascii("cat > " + dest));
+        try (InputStream in = new FileInputStream(file)) {
             // O libadb 3.1.1 manda vários pacotes seguidos se o bloco passar do máximo negociado,
             // e o aparelho derruba a conexão: os blocos precisam caber num pacote só.
             byte[] buf = new byte[manager.getAdbConnection().getMaxData()];
@@ -569,27 +613,47 @@ public final class Adb {
         } finally {
             stream.close();
         }
-        try {
-            waitForSize(manager, tmp, size);
-            return installResult(run(manager, "pm install -r " + tmp + " 2>&1"));
-        } finally {
-            try {
-                run(manager, "rm -f " + tmp);
-            } catch (Exception ignored) {
-            }
+        waitForSize(manager, dest, size);
+    }
+
+    /**
+     * O libadb 3.1.1 reserva o buffer do comando pelo número de caracteres, não de bytes UTF-8:
+     * com acento (ex.: "ção") lança BufferOverflowException. Nesse caso o comando vai só com ASCII,
+     * como {@code eval "$(printf '...\303\247...')"}, e o shell do aparelho remonta o texto original.
+     */
+    static String ascii(String command) {
+        boolean plain = true;
+        for (int i = 0; i < command.length() && plain; i++) plain = command.charAt(i) < 0x80;
+        if (plain) return command;
+        StringBuilder fmt = new StringBuilder();
+        for (byte b : command.getBytes(java.nio.charset.StandardCharsets.UTF_8)) {
+            int c = b & 0xFF;
+            if (c == '%') fmt.append("%%");
+            else if (c == '\\') fmt.append("\\\\");
+            else if (c >= 0x80 || c == '\'' || c < 0x20) fmt.append(String.format("\\%03o", c));
+            else fmt.append((char) c);
         }
+        return "eval \"$(printf '" + fmt + "')\"";
+    }
+
+    /** Caminho entre aspas simples para o shell do aparelho (aceita espaços e acentos). */
+    static String quote(String path) {
+        return "'" + path.replace("'", "'\\''") + "'";
     }
 
     /** O "cat" do aparelho ainda pode estar gravando o fim do arquivo quando o envio termina. */
-    private static void waitForSize(AdbManager manager, String path, long size) throws Exception {
+    private static void waitForSize(AdbManager manager, String quotedPath, long size) throws Exception {
         String got = "";
         for (int i = 0; i < 20; i++) {
-            got = run(manager, "stat -c %s " + path + " 2>/dev/null || wc -c < " + path);
+            got = run(manager, "stat -c %s " + quotedPath + " 2>/dev/null || wc -c < " + quotedPath
+                    + " 2>/dev/null");
             if (got.equals(String.valueOf(size))) return;
             Thread.sleep(500);
         }
-        throw new IOException("O APK não chegou inteiro ao aparelho (" + (got.isEmpty() ? 0 : got)
-                + " de " + size + " bytes). Tente novamente.");
+        if (!got.matches("\\d*")) throw new IOException("Não foi possível gravar no aparelho: " + got);
+        throw new IOException("O arquivo não chegou inteiro ao aparelho (" + (got.isEmpty() ? 0 : got)
+                + " de " + size + " bytes). Confira se a pasta de destino existe e tem permissão de "
+                + "escrita, e tente novamente.");
     }
 
     /** "Success" do pm; senão lança o motivo (ex.: INSTALL_FAILED_UPDATE_INCOMPATIBLE). */
