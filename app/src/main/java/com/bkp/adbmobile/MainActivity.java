@@ -8,6 +8,7 @@ import android.content.SharedPreferences;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
 import android.database.Cursor;
+import android.graphics.Typeface;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
@@ -16,6 +17,7 @@ import android.provider.OpenableColumns;
 import android.provider.Settings;
 import android.text.TextUtils;
 import android.view.View;
+import android.view.ViewGroup;
 import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
 import android.widget.Button;
@@ -350,39 +352,84 @@ public class MainActivity extends Activity {
 
     /**
      * Roda {@code task} em todos os aparelhos ao mesmo tempo (cada um tem a sua conexão) e
-     * termina com um resumo quando o último responder.
+     * termina com um resumo quando o último responder. Com vários aparelhos, o resumo no registro
+     * agrupa as falhas pelo motivo e lista o resultado de cada aparelho que deu certo.
      */
     private void runOnDevices(final List<Devices.Device> targets, final String verb, final DeviceTask task) {
         final int total = targets.size();
         final AtomicInteger done = new AtomicInteger();
-        final List<String> failed = Collections.synchronizedList(new ArrayList<>());
-        final String[] single = new String[1];
-        for (final Devices.Device d : targets) {
+        // Resultado de cada aparelho, na ordem da lista: motivo da falha (null se deu certo) e saída.
+        final String[] errors = new String[total];
+        final String[] results = new String[total];
+        for (int i = 0; i < total; i++) {
+            final int index = i;
+            final Devices.Device d = targets.get(i);
             background(() -> {
                 String prefix = "[" + d.label() + "] ";
                 try {
-                    String result = task.run(d);
-                    single[0] = result.isEmpty() ? verb + " em " + d.label() + "." : d.label() + ": " + result;
-                    log(prefix + "OK" + (result.isEmpty() ? "" : ": " + result));
+                    results[index] = task.run(d);
+                    log(prefix + "OK" + (results[index].isEmpty() ? "" : ": " + results[index]));
                 } catch (AdbPairingRequiredException e) {
-                    failed.add(d.label());
-                    single[0] = d.label() + " exige pareamento. Conclua a etapa 1.";
-                    log(prefix + "ERRO: exige pareamento. Conclua a etapa 1.");
+                    errors[index] = "Exige pareamento. Conclua a etapa 1.";
+                    log(prefix + "ERRO: " + errors[index]);
                 } catch (Exception e) {
-                    failed.add(d.label());
-                    single[0] = "Falha em " + d.label() + ": " + Adb.describe(e);
-                    log(prefix + "ERRO: " + Adb.describe(e));
+                    errors[index] = commandError(e);
+                    log(prefix + "ERRO: " + errors[index]);
                 }
                 if (done.incrementAndGet() < total) return;
-                if (total == 1) {
-                    finish(failed.isEmpty() ? Status.SUCCESS : Status.ERROR, single[0]);
-                } else if (failed.isEmpty()) {
-                    finish(Status.SUCCESS, verb + " nos " + total + " aparelhos.");
-                } else {
-                    finish(Status.ERROR, "Falhou em " + failed.size() + " de " + total + ": "
-                            + TextUtils.join(", ", failed) + ".");
-                }
+                // O incrementAndGet garante que o último vê os resultados gravados pelos outros.
+                finishDevices(targets, verb, errors, results);
             });
+        }
+    }
+
+    private void finishDevices(List<Devices.Device> targets, String verb, String[] errors, String[] results) {
+        int total = targets.size();
+        if (total == 1) {
+            String label = targets.get(0).label();
+            if (errors[0] != null) finish(Status.ERROR, "Falha em " + label + ": " + errors[0]);
+            else finish(Status.SUCCESS, results[0].isEmpty() ? verb + " em " + label + "." : label + ": " + results[0]);
+            return;
+        }
+        // Falhas agrupadas pelo motivo (o mesmo erro em vários aparelhos aparece uma vez só).
+        Map<String, List<String>> byReason = new LinkedHashMap<>();
+        List<String> okPlain = new ArrayList<>();
+        List<String> okWithResult = new ArrayList<>();
+        List<String> failedLabels = new ArrayList<>();
+        for (int i = 0; i < total; i++) {
+            String label = targets.get(i).label();
+            if (errors[i] != null) {
+                failedLabels.add(label);
+                List<String> list = byReason.get(errors[i]);
+                if (list == null) byReason.put(errors[i], list = new ArrayList<>());
+                list.add(label);
+            } else if (results[i].isEmpty()) {
+                okPlain.add(label);
+            } else {
+                okWithResult.add(label + ": " + results[i]);
+            }
+        }
+        int ok = total - failedLabels.size();
+        StringBuilder summary = new StringBuilder("Resumo: " + ok + " de " + total + " OK");
+        if (!failedLabels.isEmpty()) summary.append(", ").append(failedLabels.size()).append(" com falha");
+        for (Map.Entry<String, List<String>> e : byReason.entrySet()) {
+            summary.append("\n  FALHA (").append(e.getValue().size()).append("): ")
+                    .append(TextUtils.join(", ", e.getValue())).append("\n    ").append(e.getKey());
+        }
+        if (!okPlain.isEmpty()) {
+            summary.append("\n  OK (").append(okPlain.size()).append("): ").append(TextUtils.join(", ", okPlain));
+        }
+        for (String line : okWithResult) summary.append("\n  OK ").append(line);
+        log(summary.toString());
+
+        if (failedLabels.isEmpty()) {
+            finish(Status.SUCCESS, verb + " nos " + total + " aparelhos.");
+        } else if (byReason.size() == 1) {
+            finish(Status.ERROR, "OK em " + ok + " de " + total + ". Falhou em "
+                    + TextUtils.join(", ", failedLabels) + ": " + byReason.keySet().iterator().next());
+        } else {
+            finish(Status.ERROR, "OK em " + ok + " de " + total + ". Falhou em "
+                    + TextUtils.join(", ", failedLabels) + " (motivos no resumo do registro).");
         }
     }
 
@@ -460,15 +507,51 @@ public class MainActivity extends Activity {
 
     // ---------- Comandos ----------
 
+    /** Tag das views de título de grupo na lista de comandos. */
+    private static final String HEADER = "header";
+
     private void setupCommands() {
         presetSpinner = findViewById(R.id.preset);
         commandField = findViewById(R.id.command);
-        ArrayAdapter<AdbCommands.Preset> adapter = new ArrayAdapter<>(this,
-                android.R.layout.simple_spinner_item, AdbCommands.PRESETS);
+        final float dp = getResources().getDisplayMetrics().density;
+        ArrayAdapter<AdbCommands.Preset> adapter = new ArrayAdapter<AdbCommands.Preset>(this,
+                android.R.layout.simple_spinner_item, AdbCommands.PRESETS) {
+            @Override
+            public boolean areAllItemsEnabled() {
+                return false;
+            }
+
+            @Override
+            public boolean isEnabled(int position) {
+                return !getItem(position).isHeader();
+            }
+
+            // O Spinner só aceita um tipo de view (getViewTypeCount() = 1), então a view reciclada
+            // pode ser de título ou de item; a tag HEADER diferencia as duas.
+            @Override
+            public View getDropDownView(int position, View convertView, ViewGroup parent) {
+                AdbCommands.Preset p = getItem(position);
+                boolean recycledHeader = convertView != null && HEADER.equals(convertView.getTag());
+                if (!p.isHeader()) {
+                    return super.getDropDownView(position, recycledHeader ? null : convertView, parent);
+                }
+                // Título do grupo: pequeno, em maiúsculas e na cor do app, como os títulos dos cartões.
+                TextView title = recycledHeader ? (TextView) convertView : new TextView(getContext());
+                title.setTag(HEADER);
+                title.setText(p.label.toUpperCase(Locale.getDefault()));
+                title.setTextSize(12);
+                title.setTypeface(Typeface.DEFAULT_BOLD);
+                title.setLetterSpacing(0.08f);
+                title.setTextColor(color(R.color.primary));
+                title.setBackgroundColor(color(R.color.primary_tint));
+                title.setPadding((int) (16 * dp), (int) (10 * dp), (int) (16 * dp), (int) (6 * dp));
+                return title;
+            }
+        };
         adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
         presetSpinner.setAdapter(adapter);
 
-        final int saved = Math.max(0, Math.min(prefs.getInt("preset", 0), AdbCommands.PRESETS.length - 1));
+        final int saved = savedPresetPosition();
         presetSpinner.setSelection(saved, false);
         commandField.setText(prefs.getString("command", fill(AdbCommands.PRESETS[saved].command)));
         updateReadButton();
@@ -479,8 +562,13 @@ public class MainActivity extends Activity {
             @Override
             public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
                 if (position == shown) return;
+                if (AdbCommands.PRESETS[position].isHeader()) {
+                    // Título de grupo não é comando: pula para o primeiro item do grupo.
+                    presetSpinner.setSelection(Math.min(position + 1, AdbCommands.PRESETS.length - 1));
+                    return;
+                }
                 shown = position;
-                prefs.edit().putInt("preset", position).apply();
+                prefs.edit().putString("presetLabel", AdbCommands.PRESETS[position].label).apply();
                 commandField.setText(fill(AdbCommands.PRESETS[position].command));
                 if (AdbCommands.PRESETS[position].command.isEmpty()) commandField.requestFocus();
                 updateReadButton();
@@ -492,9 +580,29 @@ public class MainActivity extends Activity {
         });
     }
 
+    /**
+     * Posição do comando escolhido da última vez. Até a 2.9 era salvo o índice numa lista sem
+     * títulos de grupo ("preset"); agora é salvo o nome, que não muda se a lista ganhar itens.
+     */
+    private int savedPresetPosition() {
+        AdbCommands.Preset[] all = AdbCommands.PRESETS;
+        String label = prefs.getString("presetLabel", null);
+        int oldIndex = prefs.getInt("preset", 0);
+        int first = -1;
+        int count = 0;
+        for (int i = 0; i < all.length; i++) {
+            if (all[i].isHeader()) continue;
+            if (first < 0) first = i;
+            if (label != null ? all[i].label.equals(label) : count == oldIndex) return i;
+            count++;
+        }
+        return first;
+    }
+
     private AdbCommands.Preset selectedPreset() {
         int i = presetSpinner.getSelectedItemPosition();
-        return AdbCommands.PRESETS[i < 0 ? 0 : i];
+        AdbCommands.Preset p = AdbCommands.PRESETS[i < 0 ? 0 : i];
+        return p.isHeader() ? AdbCommands.PRESETS[savedPresetPosition()] : p;
     }
 
     private void updateReadButton() {

@@ -44,10 +44,19 @@ public final class AdbCommands {
             this.warning = warning;
         }
 
+        /** Título de grupo na lista (sem comando, não selecionável). */
+        public boolean isHeader() {
+            return command == null;
+        }
+
         @Override
         public String toString() {
             return label;
         }
+    }
+
+    private static Preset header(String title) {
+        return new Preset(title, null, null, null, false, null);
     }
 
     private static Preset run(String label, String command) {
@@ -106,12 +115,14 @@ public final class AdbCommands {
         return "O comando falhou.";
     }
 
+    /** Lista mostrada na tela; os títulos de grupo ({@link Preset#isHeader()}) não são selecionáveis. */
     public static final Preset[] PRESETS = {
+            header("Ethernet"),
             set("Ativar conexão Ethernet (eth_device_conn = 2)", Adb.COMMAND, Adb.READ_COMMAND, ETHERNET),
             set("Desativar conexão Ethernet (eth_device_conn = 0)",
                     "settings put system eth_device_conn 0", Adb.READ_COMMAND, ETHERNET),
 
-            // Informações
+            header("Informações"),
             run("Informações do aparelho", Adb.DEVICE_INFO_COMMAND),
             run("Endereços IP", "ip -o -4 addr show | awk '{print $2, $4}'"),
             run("Bateria", "dumpsys battery"),
@@ -121,7 +132,7 @@ public final class AdbCommands {
             run("Data, hora e tempo ligado", "date; uptime"),
             run("App em primeiro plano", Adb.FOREGROUND_COMMAND),
 
-            // Apps
+            header("Apps"),
             run("Listar apps instalados (de terceiros)", "pm list packages -3"),
             run("Versão do app", "dumpsys package " + PACKAGE + " | grep -m2 -E 'versionName|versionCode'"),
             run("Abrir app", "monkey -p " + PACKAGE + " -c android.intent.category.LAUNCHER 1"),
@@ -129,7 +140,7 @@ public final class AdbCommands {
             danger("Limpar dados do app", "pm clear " + PACKAGE),
             danger("Desinstalar app", "pm uninstall " + PACKAGE),
 
-            // Kiosk (Device Owner)
+            header("Kiosk (Device Owner)"),
             new Preset("Kiosk: definir como Device Owner",
                     "dpm set-device-owner " + KIOSK_ADMIN, DEVICE_OWNER_READ, DEVICE_OWNER, true,
                     "O aparelho não pode ter contas (Google, Samsung etc.), outros usuários nem outro "
@@ -140,7 +151,7 @@ public final class AdbCommands {
                     "Só funciona se o Kiosk instalado for uma versão de teste (testOnly). Na versão "
                             + "normal o Android recusa; nesse caso remova pelo próprio Kiosk."),
 
-            // Configurações
+            header("Configurações"),
             set("Tela: desligar após 30 min", "settings put system screen_off_timeout 1800000",
                     "settings get system screen_off_timeout", "Desligar tela após (ms)"),
             set("Tela: manter ligada enquanto carrega", "settings put global stay_on_while_plugged_in 7",
@@ -159,12 +170,13 @@ public final class AdbCommands {
             run("Ligar Wi-Fi", "svc wifi enable"),
             run("Abrir Configurações", "am start -a android.settings.SETTINGS"),
 
-            // Teclas e energia
+            header("Teclas e energia"),
             run("Tecla Home", "input keyevent KEYCODE_HOME"),
             run("Tecla Voltar", "input keyevent KEYCODE_BACK"),
             run("Ligar/desligar tela", "input keyevent KEYCODE_POWER"),
             danger("Reiniciar aparelho", "reboot"),
 
+            header("Outro"),
             new Preset("Comando personalizado", "", null, null, false, null),
     };
 
