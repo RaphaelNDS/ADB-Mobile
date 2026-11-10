@@ -76,11 +76,80 @@ public final class AppInfo {
         public final String pkg;
         public final String text;
         public final String dumpsys;
+        public boolean system;
+        public boolean enabled;
+        public boolean running;
+        /** Activity da tela inicial (pacote/classe) ou null se o app não tem ícone. */
+        public String launcher;
 
         Details(String pkg, String text, String dumpsys) {
             this.pkg = pkg;
             this.text = text;
             this.dumpsys = dumpsys;
+        }
+    }
+
+    /** Ações sobre um app; {@link #confirm} pede confirmação antes (perde dados ou some do aparelho). */
+    public enum Action {
+        OPEN("Abrir", false),
+        STOP("Forçar parada", false),
+        ENABLE("Ativar", false),
+        DISABLE("Desativar", true),
+        CLEAR("Limpar dados", true),
+        UNINSTALL("Desinstalar", true);
+
+        public final String label;
+        public final boolean confirm;
+
+        Action(String label, boolean confirm) {
+            this.label = label;
+            this.confirm = confirm;
+        }
+    }
+
+    /** Ações que fazem sentido no estado atual do app. */
+    public static List<Action> actions(Details d) {
+        List<Action> list = new ArrayList<>();
+        if (d.enabled && d.launcher != null) list.add(Action.OPEN);
+        if (d.running) list.add(Action.STOP);
+        list.add(d.enabled ? Action.DISABLE : Action.ENABLE);
+        list.add(Action.CLEAR);
+        // Desinstalar app do sistema exige root; o "Desativar" resolve.
+        if (!d.system) list.add(Action.UNINSTALL);
+        return list;
+    }
+
+    /** Executa a ação; devolve a mensagem de sucesso ou lança o erro do aparelho. */
+    public static String run(Adb.Shell shell, Details d, Action action) throws Exception {
+        String pkg = d.pkg;
+        if (!validPackage(pkg)) throw new IOException("Pacote inválido: " + pkg);
+        String out;
+        switch (action) {
+            case OPEN:
+                out = shell.run("am start -n " + d.launcher + " 2>&1");
+                if (out.contains("Error")) throw new IOException(out.trim());
+                return "Aberto: " + pkg;
+            case STOP:
+                shell.run("am force-stop " + pkg);
+                return "Parado à força: " + pkg;
+            case ENABLE:
+                out = shell.run("pm enable " + pkg + " 2>&1");
+                if (!out.contains("enabled")) throw new IOException(out.trim());
+                return "Ativado: " + pkg;
+            case DISABLE:
+                out = shell.run("pm disable-user --user 0 " + pkg + " 2>&1");
+                if (!out.contains("disabled")) throw new IOException(out.trim());
+                return "Desativado: " + pkg;
+            case CLEAR:
+                out = shell.run("pm clear " + pkg + " 2>&1");
+                if (!out.contains("Success")) throw new IOException(out.trim());
+                return "Dados apagados: " + pkg;
+            case UNINSTALL:
+                out = shell.run("pm uninstall " + pkg + " 2>&1");
+                if (!out.contains("Success")) throw new IOException(out.trim());
+                return "Desinstalado: " + pkg;
+            default:
+                throw new IllegalArgumentException(action.name());
         }
     }
 
@@ -148,7 +217,13 @@ public final class AppInfo {
             b.append("\nPermissões negadas (").append(denied.size()).append(")\n");
             for (String p : denied) b.append("  • ").append(p).append('\n');
         }
-        return new Details(pkg, b.toString().trim(), dump);
+        Details details = new Details(pkg, b.toString().trim(), dump);
+        details.system = system;
+        String enabled = find(section, "User 0:[^\\n]*\\benabled=(\\d)");
+        details.enabled = enabled == null || enabled.equals("0") || enabled.equals("1");
+        details.running = !pid.isEmpty();
+        details.launcher = launcher.contains("/") && !launcher.contains(" ") ? launcher : null;
+        return details;
     }
 
     /** Bloco "Package [pkg]" do dumpsys (até a próxima seção de primeiro nível). */
