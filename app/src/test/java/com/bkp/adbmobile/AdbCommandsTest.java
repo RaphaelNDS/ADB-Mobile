@@ -102,6 +102,26 @@ public class AdbCommandsTest {
     }
 
     @Test
+    public void failure_abrirAppSemApp() {
+        // Saída do "Abrir app" (já filtrada pelo grep) com pacote que não existe.
+        String msg = AdbCommands.failure("** No activities found to run, monkey aborted.\n");
+        assertNotNull(msg);
+        assertTrue(msg, msg.contains("não está instalado"));
+    }
+
+    @Test
+    public void failure_abrirAppComSucesso_naoEhFalha() {
+        // Com o filtro, o sucesso não imprime nada.
+        assertNull(AdbCommands.failure(""));
+    }
+
+    @Test
+    public void presets_abrirAppFiltraOMonkey() {
+        String cmd = find("Abrir app").command;
+        assertTrue(cmd, cmd.contains("2>&1") && cmd.contains("| grep -E 'aborted"));
+    }
+
+    @Test
     public void failure_ignoraMaiusculas() {
         assertNotNull(AdbCommands.failure("EXCEPTION OCCURRED WHILE EXECUTING 'x':\nUNKNOWN ADMIN"));
     }
