@@ -495,8 +495,12 @@ public final class Adb {
         };
     }
 
-    /** Linha do dumpsys com a Activity em primeiro plano (Android 10-: mResumedActivity; 11+: topResumedActivity). */
-    public static final String FOREGROUND_COMMAND = "dumpsys activity activities | grep -m1 ResumedActivity";
+    /**
+     * Linha do dumpsys com a Activity em primeiro plano (Android 10-: mResumedActivity; 11+:
+     * topResumedActivity). O 2>/dev/null esconde o "Broken pipe" que o dumpsys escreve quando o
+     * grep -m1 fecha o pipe antes do fim.
+     */
+    public static final String FOREGROUND_COMMAND = "dumpsys activity activities 2>/dev/null | grep -m1 ResumedActivity";
 
     private static final Pattern FOREGROUND_PACKAGE = Pattern.compile("u\\d+ ([^/\\s]+)/");
 
