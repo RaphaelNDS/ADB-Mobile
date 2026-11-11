@@ -85,6 +85,13 @@ public class MainActivity extends Activity {
     private TextView logFolderLabel;
     private Button toggleMonitorButton;
     private Spinner presetSpinner;
+    /** Itens da lista de comandos: "Meus comandos" (se houver) e depois os prontos. */
+    private final List<AdbCommands.Preset> presets = new ArrayList<>();
+    private ArrayAdapter<AdbCommands.Preset> presetAdapter;
+    private SavedCommands savedCommands;
+    /** Posição já mostrada no campo; o Spinner avisa seleções que não devem trocar o texto. */
+    private int shownPreset;
+    private Button deleteCommandButton;
     private EditText commandField;
     private Button readButton;
     private List<Devices.Device> devices;
@@ -535,9 +542,14 @@ public class MainActivity extends Activity {
     private void setupCommands() {
         presetSpinner = findViewById(R.id.preset);
         commandField = findViewById(R.id.command);
+        savedCommands = new SavedCommands(this);
+        deleteCommandButton = findViewById(R.id.deleteCommand);
+        findViewById(R.id.saveCommand).setOnClickListener(v -> askSaveCommand());
+        deleteCommandButton.setOnClickListener(v -> confirmDeleteCommand());
+        loadPresets();
         final float dp = getResources().getDisplayMetrics().density;
         ArrayAdapter<AdbCommands.Preset> adapter = new ArrayAdapter<AdbCommands.Preset>(this,
-                android.R.layout.simple_spinner_item, AdbCommands.PRESETS) {
+                android.R.layout.simple_spinner_item, presets) {
             @Override
             public boolean areAllItemsEnabled() {
                 return false;
@@ -571,29 +583,29 @@ public class MainActivity extends Activity {
             }
         };
         adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        presetAdapter = adapter;
         presetSpinner.setAdapter(adapter);
 
         final int saved = savedPresetPosition();
+        // O Spinner avisa a seleção inicial ao desenhar; ela não deve sobrescrever o texto salvo.
+        shownPreset = saved;
         presetSpinner.setSelection(saved, false);
-        commandField.setText(prefs.getString("command", fill(AdbCommands.PRESETS[saved].command)));
-        updateReadButton();
+        commandField.setText(prefs.getString("command", fill(presets.get(saved).command)));
+        updatePresetButtons();
         presetSpinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
-            /** O Spinner avisa a seleção inicial ao desenhar; ela não deve sobrescrever o texto salvo. */
-            private int shown = saved;
-
             @Override
             public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
-                if (position == shown) return;
-                if (AdbCommands.PRESETS[position].isHeader()) {
+                if (position == shownPreset) return;
+                if (presets.get(position).isHeader()) {
                     // Título de grupo não é comando: pula para o primeiro item do grupo.
-                    presetSpinner.setSelection(Math.min(position + 1, AdbCommands.PRESETS.length - 1));
+                    presetSpinner.setSelection(Math.min(position + 1, presets.size() - 1));
                     return;
                 }
-                shown = position;
-                prefs.edit().putString("presetLabel", AdbCommands.PRESETS[position].label).apply();
-                commandField.setText(fill(AdbCommands.PRESETS[position].command));
-                if (AdbCommands.PRESETS[position].command.isEmpty()) commandField.requestFocus();
-                updateReadButton();
+                shownPreset = position;
+                prefs.edit().putString("presetLabel", presets.get(position).key()).apply();
+                commandField.setText(fill(presets.get(position).command));
+                if (presets.get(position).command.isEmpty()) commandField.requestFocus();
+                updatePresetButtons();
             }
 
             @Override
@@ -602,20 +614,49 @@ public class MainActivity extends Activity {
         });
     }
 
+    /** Monta a lista: "Meus comandos" no topo, quando há algum salvo, e depois os prontos. */
+    private void loadPresets() {
+        presets.clear();
+        List<AdbCommands.Preset> mine = savedCommands.load();
+        if (!mine.isEmpty()) {
+            presets.add(AdbCommands.header(AdbCommands.MY_COMMANDS));
+            presets.addAll(mine);
+        }
+        Collections.addAll(presets, AdbCommands.PRESETS);
+    }
+
+    /**
+     * Recarrega a lista depois de salvar ou excluir e seleciona o item de {@code key} (ou o
+     * primeiro, se ele não existe mais). Não troca o texto do campo.
+     */
+    private void reloadPresets(String key) {
+        loadPresets();
+        presetAdapter.notifyDataSetChanged();
+        prefs.edit().putString("presetLabel", key).apply();
+        int position = savedPresetPosition();
+        shownPreset = position;
+        presetSpinner.setSelection(position, false);
+        updatePresetButtons();
+    }
+
     /**
      * Posição do comando escolhido da última vez. Até a 2.9 era salvo o índice numa lista sem
-     * títulos de grupo ("preset"); agora é salvo o nome, que não muda se a lista ganhar itens.
+     * títulos de grupo ("preset"); agora é salvo o nome ({@link AdbCommands.Preset#key()}), que
+     * não muda se a lista ganhar itens.
      */
     private int savedPresetPosition() {
-        AdbCommands.Preset[] all = AdbCommands.PRESETS;
-        String label = prefs.getString("presetLabel", null);
+        String key = prefs.getString("presetLabel", null);
         int oldIndex = prefs.getInt("preset", 0);
         int first = -1;
         int count = 0;
-        for (int i = 0; i < all.length; i++) {
-            if (all[i].isHeader()) continue;
+        for (int i = 0; i < presets.size(); i++) {
+            AdbCommands.Preset p = presets.get(i);
+            if (p.isHeader()) continue;
+            if (key != null && p.key().equals(key)) return i;
+            // A lista antiga por índice não tinha os comandos salvos.
+            if (p.userSaved) continue;
             if (first < 0) first = i;
-            if (label != null ? all[i].label.equals(label) : count == oldIndex) return i;
+            if (key == null && count == oldIndex) return i;
             count++;
         }
         return first;
@@ -623,12 +664,111 @@ public class MainActivity extends Activity {
 
     private AdbCommands.Preset selectedPreset() {
         int i = presetSpinner.getSelectedItemPosition();
-        AdbCommands.Preset p = AdbCommands.PRESETS[i < 0 ? 0 : i];
-        return p.isHeader() ? AdbCommands.PRESETS[savedPresetPosition()] : p;
+        AdbCommands.Preset p = presets.get(i < 0 ? 0 : i);
+        return p.isHeader() ? presets.get(savedPresetPosition()) : p;
     }
 
-    private void updateReadButton() {
-        readButton.setVisibility(selectedPreset().read != null ? View.VISIBLE : View.GONE);
+    private void updatePresetButtons() {
+        AdbCommands.Preset p = selectedPreset();
+        readButton.setVisibility(p.read != null ? View.VISIBLE : View.GONE);
+        deleteCommandButton.setVisibility(p.userSaved ? View.VISIBLE : View.GONE);
+    }
+
+    /** Pede um nome e salva o texto do campo em "Meus comandos". */
+    private void askSaveCommand() {
+        final String cmd = commandField.getText().toString().trim();
+        if (cmd.isEmpty()) {
+            setStatus(Status.ERROR, "Digite o comando antes de salvar.");
+            return;
+        }
+        final AdbCommands.Preset current = selectedPreset();
+        final float dp = getResources().getDisplayMetrics().density;
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding((int) (24 * dp), (int) (8 * dp), (int) (24 * dp), 0);
+        final EditText nameField = new EditText(this);
+        nameField.setHint("Nome do comando");
+        nameField.setSingleLine(true);
+        // Ao editar um salvo, sugere o mesmo nome para atualizar em vez de duplicar.
+        if (current.userSaved) {
+            nameField.setText(current.label);
+            nameField.setSelection(current.label.length());
+        }
+        box.addView(nameField);
+        final CheckBox confirmBox = new CheckBox(this);
+        confirmBox.setText("Pedir confirmação antes de executar");
+        confirmBox.setChecked(current.confirm);
+        box.addView(confirmBox);
+        TextView preview = new TextView(this);
+        preview.setText("adb shell " + cmd);
+        preview.setTypeface(Typeface.MONOSPACE);
+        preview.setTextSize(12);
+        preview.setTextColor(color(R.color.text_primary));
+        preview.setPadding(0, (int) (8 * dp), 0, 0);
+        box.addView(preview);
+
+        final AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle("Salvar em \"" + AdbCommands.MY_COMMANDS + "\"")
+                .setView(box)
+                .setPositiveButton("Salvar", null)
+                .setNegativeButton("Cancelar", null)
+                .create();
+        // Botão tratado à mão para a janela não fechar quando o nome está vazio.
+        dialog.setOnShowListener(x -> dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
+            final String name = nameField.getText().toString().trim();
+            if (name.isEmpty()) {
+                nameField.setError("Informe um nome");
+                return;
+            }
+            boolean sameItem = current.userSaved && current.label.equals(name);
+            if (!sameItem && savedCommands.contains(name)) {
+                new AlertDialog.Builder(this)
+                        .setMessage("Já existe um comando chamado \"" + name + "\". Substituir?")
+                        .setPositiveButton("Substituir", (d, w) -> {
+                            dialog.dismiss();
+                            saveCommand(name, cmd, confirmBox.isChecked());
+                        })
+                        .setNegativeButton("Cancelar", null)
+                        .show();
+                return;
+            }
+            dialog.dismiss();
+            saveCommand(name, cmd, confirmBox.isChecked());
+        }));
+        dialog.show();
+    }
+
+    private void saveCommand(String name, String cmd, boolean confirm) {
+        boolean replaced = savedCommands.put(name, cmd, confirm);
+        prefs.edit().putString("command", cmd).apply();
+        reloadPresets(AdbCommands.saved(name, cmd, confirm).key());
+        String message = (replaced ? "Comando atualizado: " : "Comando salvo: ") + name;
+        append(message);
+        setStatus(Status.SUCCESS, message);
+    }
+
+    private void confirmDeleteCommand() {
+        final AdbCommands.Preset p = selectedPreset();
+        if (!p.userSaved) return;
+        new AlertDialog.Builder(this)
+                .setTitle("Excluir comando")
+                .setMessage("Excluir \"" + p.label + "\" de \"" + AdbCommands.MY_COMMANDS + "\"?\n\nadb shell "
+                        + p.command)
+                .setPositiveButton("Excluir", (d, w) -> {
+                    savedCommands.remove(p.label);
+                    // Chave que não existe: volta para o primeiro comando da lista. Com null, valeria
+                    // o índice antigo da 2.9, que aponta para um comando qualquer.
+                    reloadPresets("");
+                    AdbCommands.Preset now = selectedPreset();
+                    String text = fill(now.command);
+                    commandField.setText(text);
+                    prefs.edit().putString("presetLabel", now.key()).putString("command", text).apply();
+                    String message = "Comando excluído: " + p.label;
+                    append(message);
+                    setStatus(Status.INFO, message);
+                })
+                .setNegativeButton("Cancelar", null)
+                .show();
     }
 
     /** Troca {pacote} pelo pacote informado no Log automático. */
