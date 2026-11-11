@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Medidas para celular (menos de 480 dp de largura). O tablet usa values-sw480dp. -->
+<resources>
+    <!-- Margem entre a borda da tela e os cartões -->
+    <dimen name="screen_padding">10dp</dimen>
+    <!-- Margem interna dos cartões -->
+    <dimen name="card_padding">14dp</dimen>
+    <!-- Espaço entre um cartão e o próximo -->
+    <dimen name="card_gap">10dp</dimen>
+</resources>

@@ -15,8 +15,8 @@
         <item name="android:layout_height">wrap_content</item>
         <item name="android:orientation">vertical</item>
         <item name="android:background">@drawable/bg_card</item>
-        <item name="android:padding">16dp</item>
-        <item name="android:layout_marginBottom">12dp</item>
+        <item name="android:padding">@dimen/card_padding</item>
+        <item name="android:layout_marginBottom">@dimen/card_gap</item>
     </style>
 
     <style name="CardHeader">
@@ -88,9 +88,16 @@
         <item name="android:imeOptions">actionDone</item>
     </style>
 
+    <!-- Altura mínima de 48 dp, mas cresce se o texto quebrar (celular estreito ou fonte grande). -->
     <style name="ButtonBase">
         <item name="android:layout_width">match_parent</item>
-        <item name="android:layout_height">48dp</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:minHeight">48dp</item>
+        <item name="android:minWidth">0dp</item>
+        <item name="android:paddingStart">10dp</item>
+        <item name="android:paddingEnd">10dp</item>
+        <item name="android:paddingTop">6dp</item>
+        <item name="android:paddingBottom">6dp</item>
         <item name="android:textSize">15sp</item>
         <item name="android:textStyle">bold</item>
         <item name="android:textAllCaps">false</item>
