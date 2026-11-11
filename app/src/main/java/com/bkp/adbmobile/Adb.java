@@ -26,7 +26,9 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.LinkedBlockingQueue;
+import java.net.InetSocketAddress;
 import java.net.NetworkInterface;
+import java.net.Socket;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -269,6 +271,7 @@ public final class Adb {
 
     /** Uma tentativa de conexão; em falha, libera o cliente e repassa o erro. */
     private static AdbManager connect(Context context, String host, int port) throws Exception {
+        checkReachable(host, port);
         AdbManager manager = AdbManager.create(context);
         // Tempo para a pessoa aceitar o aviso "Permitir depuração?" no aparelho alvo.
         manager.setTimeout(60, TimeUnit.SECONDS);
@@ -280,6 +283,26 @@ public final class Adb {
         }
         release(manager);
         throw new IOException("Conexão recusada em " + host + ":" + port);
+    }
+
+    /** Tempo para a porta aceitar a conexão TCP antes de desistir do aparelho. */
+    private static final int REACH_TIMEOUT_MS = 3000;
+
+    /**
+     * Abre e fecha uma conexão TCP com prazo curto. Sem isso, um IP que não existe na rede só
+     * falha quando o sistema desiste (cerca de 30 s), porque a biblioteca conecta sem prazo.
+     */
+    private static void checkReachable(String host, int port) throws IOException {
+        Socket socket = new Socket();
+        try {
+            socket.connect(new InetSocketAddress(host, port), REACH_TIMEOUT_MS);
+        } finally {
+            try {
+                socket.close();
+            } catch (IOException ignored) {
+                // Só testava o alcance.
+            }
+        }
     }
 
     private static final String CONNECT_SERVICE = "_adb-tls-connect._tcp";
