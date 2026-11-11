@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Celular: IP e porta um embaixo do outro, para o rótulo "Porta de conexão" não quebrar. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical">
+
+    <TextView
+        style="@style/FieldLabel"
+        android:text="Endereço IP" />
+
+    <EditText
+        android:id="@+id/host"
+        style="@style/Field"
+        android:hint="192.168.0.50"
+        android:inputType="textUri" />
+
+    <TextView
+        style="@style/FieldLabel"
+        android:layout_marginTop="10dp"
+        android:text="Porta de conexão" />
+
+    <EditText
+        android:id="@+id/connectPort"
+        style="@style/Field"
+        android:hint="5555"
+        android:inputType="number" />
+</LinearLayout>

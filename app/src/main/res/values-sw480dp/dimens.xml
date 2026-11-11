@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Medidas para tablet (480 dp ou mais na menor largura; o SM-T225 tem 601 dp), iguais às da versão 2.16. -->
+<resources>
+    <dimen name="screen_padding">16dp</dimen>
+    <dimen name="card_padding">16dp</dimen>
+    <dimen name="card_gap">12dp</dimen>
+</resources>
