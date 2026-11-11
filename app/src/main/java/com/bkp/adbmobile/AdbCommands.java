@@ -28,6 +28,32 @@ public final class AdbCommands {
             + " | grep -o 'ComponentInfo{[^}]*}' | head -n 1 | sed 's/ComponentInfo{\\(.*\\)}/\\1/');"
             + " echo ${o:-nenhum}";
 
+    /** Pacote do app Kiosk (o mesmo de {@link #KIOSK_ADMIN}). */
+    private static final String KIOSK_PACKAGE = "br.com.backupautomacao.kiosk";
+
+    /**
+     * Resumo do Kiosk em quatro linhas: versão, se é o Device Owner, se está em primeiro plano e
+     * o estado do modo quiosque (Lock Task). Os dumpsys vão com 2>/dev/null porque o grep -m1
+     * fecha o pipe antes do fim e o dumpsys reclama de "Broken pipe".
+     */
+    private static final String KIOSK_STATUS = "p=" + KIOSK_PACKAGE + ";"
+            + " v=$(dumpsys package $p 2>/dev/null | grep -m1 versionName | sed 's/.*versionName=//');"
+            + " c=$(dumpsys package $p 2>/dev/null | grep -m1 versionCode | sed 's/.*versionCode=\\([0-9]*\\).*/\\1/');"
+            + " if [ -n \"$v\" ]; then echo \"Versão do Kiosk: $v ($c)\"; else echo 'Versão do Kiosk: não instalado'; fi;"
+            + " o=$(dumpsys device_policy 2>/dev/null | grep -A2 'Device Owner:' | grep -o 'ComponentInfo{[^}]*}'"
+            + " | head -n 1 | sed 's/ComponentInfo{\\(.*\\)}/\\1/');"
+            + " case \"$o\" in $p/*) echo 'Device Owner: sim';; '') echo 'Device Owner: não (nenhum definido)';;"
+            + " *) echo \"Device Owner: não (atual: $o)\";; esac;"
+            + " f=$(dumpsys activity activities 2>/dev/null | grep -m1 ResumedActivity"
+            + " | sed 's/.* u[0-9]* \\([^/ ]*\\)\\/.*/\\1/');"
+            + " if [ \"$f\" = \"$p\" ]; then echo 'Em primeiro plano: sim';"
+            + " else echo \"Em primeiro plano: não (atual: ${f:-desconhecido})\"; fi;"
+            + " l=$(dumpsys activity 2>/dev/null | grep -m1 mLockTaskModeState | sed 's/.*=//');"
+            + " case \"$l\" in LOCKED) echo 'Modo quiosque (Lock Task): ativo';;"
+            + " PINNED) echo 'Modo quiosque (Lock Task): tela fixada';;"
+            + " NONE) echo 'Modo quiosque (Lock Task): inativo';;"
+            + " *) echo 'Modo quiosque (Lock Task): desconhecido';; esac";
+
     private static final String DEVICE_OWNER = "Device Owner";
     private static final String ETHERNET = "Ethernet (eth_device_conn)";
     private static final String ANIMATIONS = "Escala das animações";
@@ -150,6 +176,7 @@ public final class AdbCommands {
             danger("Desinstalar app", "pm uninstall " + PACKAGE),
 
             header("Kiosk (Device Owner)"),
+            run("Kiosk: status", KIOSK_STATUS),
             new Preset("Kiosk: definir como Device Owner",
                     "dpm set-device-owner " + KIOSK_ADMIN, DEVICE_OWNER_READ, DEVICE_OWNER, true,
                     "O aparelho não pode ter contas (Google, Samsung etc.), outros usuários nem outro "
