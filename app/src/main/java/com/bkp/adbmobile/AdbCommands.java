@@ -229,7 +229,7 @@ public final class AdbCommands {
 
             header("Apps"),
             run("Listar apps instalados (de terceiros)", "pm list packages -3"),
-            run("Versão do app", "dumpsys package " + PACKAGE + " | grep -m2 -E 'versionName|versionCode'"),
+            run("Versão do app", "dumpsys package " + PACKAGE + " 2>/dev/null | grep -m2 -E 'versionName|versionCode'"),
             run("Abrir app", "monkey -p " + PACKAGE + " -c android.intent.category.LAUNCHER 1"),
             run("Forçar parada do app", "am force-stop " + PACKAGE),
             danger("Limpar dados do app", "pm clear " + PACKAGE),

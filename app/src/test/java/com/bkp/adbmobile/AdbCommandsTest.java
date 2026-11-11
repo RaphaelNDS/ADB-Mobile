@@ -202,6 +202,29 @@ public class AdbCommandsTest {
         assertEquals("Kiosk: status", list.get(at).label);
     }
 
+    // ---------- "Broken pipe" ----------
+
+    /**
+     * Quando o grep -m ou o head fecha o pipe antes do fim, o dumpsys escreve "Broken pipe" na
+     * saída. Todo dumpsys cortado assim precisa do 2>/dev/null.
+     */
+    @Test
+    public void dumpsysCortadoPeloPipe_escondeOBrokenPipe() {
+        List<String> commands = new ArrayList<>();
+        for (AdbCommands.Preset p : AdbCommands.PRESETS) {
+            if (!p.isHeader()) commands.add(p.label + ": " + p.command);
+        }
+        commands.add("Adb.FOREGROUND_COMMAND: " + Adb.FOREGROUND_COMMAND);
+        for (String c : commands) {
+            // Cada trecho "dumpsys ... |" seguido de grep -m ou head.
+            java.util.regex.Matcher m = java.util.regex.Pattern
+                    .compile("dumpsys[^|;]*\\|\\s*(grep -m|head)").matcher(c);
+            while (m.find()) {
+                assertTrue("falta 2>/dev/null: " + c, m.group().contains("2>/dev/null"));
+            }
+        }
+    }
+
     // ---------- logLine() ----------
 
     @Test
