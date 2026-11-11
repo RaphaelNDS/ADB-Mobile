@@ -590,7 +590,9 @@ public class MainActivity extends Activity {
         // O Spinner avisa a seleção inicial ao desenhar; ela não deve sobrescrever o texto salvo.
         shownPreset = saved;
         presetSpinner.setSelection(saved, false);
-        commandField.setText(prefs.getString("command", fill(presets.get(saved).command)));
+        // Texto não editado volta como o comando pronto atual (que pode ter mudado numa versão nova).
+        commandField.setText(AdbCommands.restoredCommand(prefs.getString("command", null),
+                prefs.getString("commandBase", null), fill(presets.get(saved).command)));
         updatePresetButtons();
         presetSpinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
             @Override
@@ -722,7 +724,7 @@ public class MainActivity extends Activity {
 
     private void saveCommand(String name, String cmd, boolean confirm) {
         boolean replaced = savedCommands.put(name, cmd, confirm);
-        prefs.edit().putString("command", cmd).apply();
+        prefs.edit().putString("command", cmd).putString("commandBase", cmd).apply();
         reloadPresets(AdbCommands.saved(name, cmd, confirm).key());
         String message = (replaced ? "Comando atualizado: " : "Comando salvo: ") + name;
         append(message);
@@ -744,7 +746,8 @@ public class MainActivity extends Activity {
                     AdbCommands.Preset now = selectedPreset();
                     String text = fill(now.command);
                     commandField.setText(text);
-                    prefs.edit().putString("presetLabel", now.key()).putString("command", text).apply();
+                    prefs.edit().putString("presetLabel", now.key()).putString("command", text)
+                            .putString("commandBase", text).apply();
                     String message = "Comando excluído: " + p.label;
                     append(message);
                     setStatus(Status.INFO, message);
@@ -781,8 +784,9 @@ public class MainActivity extends Activity {
             setStatus(Status.ERROR, "Informe o pacote do app (em \"Log automático\") ou edite o comando.");
             return;
         }
-        prefs.edit().putString("command", cmd).apply();
         final AdbCommands.Preset preset = selectedPreset();
+        // A base (o comando pronto naquele momento) diz, ao reabrir, se o texto foi editado.
+        prefs.edit().putString("command", cmd).putString("commandBase", fill(preset.command)).apply();
         if (!preset.confirm) {
             runCommand(cmd, preset);
             return;

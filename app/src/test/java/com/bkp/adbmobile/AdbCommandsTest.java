@@ -225,6 +225,48 @@ public class AdbCommandsTest {
         }
     }
 
+    // ---------- restoredCommand() ----------
+
+    private static final String OLD = "dumpsys activity activities | grep -m1 ResumedActivity";
+    private static final String NEW = "dumpsys activity activities 2>/dev/null | grep -m1 ResumedActivity";
+
+    @Test
+    public void restoredCommand_primeiraVez_comandoAtual() {
+        assertEquals(NEW, AdbCommands.restoredCommand(null, null, NEW));
+    }
+
+    @Test
+    public void restoredCommand_semEdicao_trazOComandoAtualizado() {
+        // Executado na 2.18 sem editar; na 2.19 o comando pronto mudou.
+        assertEquals(NEW, AdbCommands.restoredCommand(OLD, OLD, NEW));
+    }
+
+    @Test
+    public void restoredCommand_editado_mantemOTextoDigitado() {
+        String edited = OLD + " | cut -d' ' -f3";
+        assertEquals(edited, AdbCommands.restoredCommand(edited, OLD, NEW));
+    }
+
+    @Test
+    public void restoredCommand_outroComandoEscolhidoSemExecutar_trazOEscolhido() {
+        // Executou "Bateria", depois escolheu "Memória" na lista e fechou o app sem executar.
+        assertEquals("cat /proc/meminfo | head -n 5",
+                AdbCommands.restoredCommand("dumpsys battery", "dumpsys battery", "cat /proc/meminfo | head -n 5"));
+    }
+
+    @Test
+    public void restoredCommand_comandoPersonalizado_mantemOTexto() {
+        // "Comando personalizado" tem texto vazio; o que foi digitado é edição.
+        assertEquals("getprop ro.product.model",
+                AdbCommands.restoredCommand("getprop ro.product.model", "", ""));
+    }
+
+    @Test
+    public void restoredCommand_salvoAteA219SemBase_mantemOTexto() {
+        // Sem base não dá para saber se foi editado: fica como estava (comportamento antigo).
+        assertEquals(OLD, AdbCommands.restoredCommand(OLD, null, NEW));
+    }
+
     // ---------- logLine() ----------
 
     @Test
