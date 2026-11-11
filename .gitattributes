@@ -1,0 +1,18 @@
+# Texto sempre com LF no repositório; o Git converte na cópia de trabalho
+* text=auto
+
+gradlew text eol=lf
+*.sh text eol=lf
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+*.apk binary
+*.jar binary
+*.aar binary
+*.dex binary
+*.png binary
+*.jpg binary
+*.webp binary
+*.pdf binary
+*.keystore binary
+*.jks binary
