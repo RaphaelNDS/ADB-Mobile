@@ -639,27 +639,9 @@ public class MainActivity extends Activity {
         updatePresetButtons();
     }
 
-    /**
-     * Posição do comando escolhido da última vez. Até a 2.9 era salvo o índice numa lista sem
-     * títulos de grupo ("preset"); agora é salvo o nome ({@link AdbCommands.Preset#key()}), que
-     * não muda se a lista ganhar itens.
-     */
+    /** Posição do comando escolhido da última vez (ver {@link AdbCommands#positionOf}). */
     private int savedPresetPosition() {
-        String key = prefs.getString("presetLabel", null);
-        int oldIndex = prefs.getInt("preset", 0);
-        int first = -1;
-        int count = 0;
-        for (int i = 0; i < presets.size(); i++) {
-            AdbCommands.Preset p = presets.get(i);
-            if (p.isHeader()) continue;
-            if (key != null && p.key().equals(key)) return i;
-            // A lista antiga por índice não tinha os comandos salvos.
-            if (p.userSaved) continue;
-            if (first < 0) first = i;
-            if (key == null && count == oldIndex) return i;
-            count++;
-        }
-        return first;
+        return AdbCommands.positionOf(presets, prefs.getString("presetLabel", null), prefs.getInt("preset", 0));
     }
 
     private AdbCommands.Preset selectedPreset() {
