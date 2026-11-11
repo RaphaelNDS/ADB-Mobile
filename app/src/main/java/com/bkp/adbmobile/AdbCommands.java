@@ -154,6 +154,20 @@ public final class AdbCommands {
         return first;
     }
 
+    /**
+     * Texto do campo do comando ao abrir o app. {@code savedText} é o último texto executado e
+     * {@code savedBase} o comando pronto naquele momento; {@code currentText} é o comando pronto
+     * de agora (já com o pacote trocado). Se o texto não foi editado, volta o comando atual, que
+     * pode ter mudado numa versão nova ou ser de outro comando escolhido depois; se foi editado,
+     * volta o que a pessoa digitou. Sem base (salvo até a 2.19), só dá para saber que não foi
+     * editado quando o texto é igual ao atual.
+     */
+    public static String restoredCommand(String savedText, String savedBase, String currentText) {
+        if (savedText == null) return currentText;
+        if (savedBase != null) return savedText.trim().equals(savedBase.trim()) ? currentText : savedText;
+        return savedText;
+    }
+
     private static Preset run(String label, String command) {
         return new Preset(label, command, null, null, false, null);
     }
