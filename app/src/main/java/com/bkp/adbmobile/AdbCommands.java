@@ -69,19 +69,35 @@ public final class AdbCommands {
         public final boolean confirm;
         /** Aviso extra mostrado na confirmação; null se não há. */
         public final String warning;
+        /** Comando salvo pela pessoa (grupo "Meus comandos"), que pode ser alterado ou excluído. */
+        public final boolean userSaved;
 
         Preset(String label, String command, String read, String readName, boolean confirm, String warning) {
+            this(label, command, read, readName, confirm, warning, false);
+        }
+
+        private Preset(String label, String command, String read, String readName, boolean confirm,
+                       String warning, boolean userSaved) {
             this.label = label;
             this.command = command;
             this.read = read;
             this.readName = readName;
             this.confirm = confirm;
             this.warning = warning;
+            this.userSaved = userSaved;
         }
 
         /** Título de grupo na lista (sem comando, não selecionável). */
         public boolean isHeader() {
             return command == null;
+        }
+
+        /**
+         * Identifica o item para lembrar a última escolha. Os salvos levam um prefixo para um
+         * comando salvo com o mesmo nome de um pronto (ex.: "Bateria") não ser confundido com ele.
+         */
+        public String key() {
+            return userSaved ? SAVED_KEY_PREFIX + label : label;
         }
 
         @Override
@@ -90,8 +106,18 @@ public final class AdbCommands {
         }
     }
 
-    private static Preset header(String title) {
+    static Preset header(String title) {
         return new Preset(title, null, null, null, false, null);
+    }
+
+    /** Título do grupo dos comandos salvos pela pessoa. */
+    public static final String MY_COMMANDS = "Meus comandos";
+
+    private static final String SAVED_KEY_PREFIX = "meu:";
+
+    /** Comando salvo pela pessoa, com nome próprio. */
+    public static Preset saved(String name, String command, boolean confirm) {
+        return new Preset(name, command, null, null, confirm, null, true);
     }
 
     private static Preset run(String label, String command) {
