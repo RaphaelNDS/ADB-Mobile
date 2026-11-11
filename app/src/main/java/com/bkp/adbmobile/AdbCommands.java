@@ -189,6 +189,11 @@ public final class AdbCommands {
     public static String failure(String output) {
         if (output == null) return null;
         String o = output.toLowerCase(Locale.ROOT);
+        // "Abrir app" (monkey) com pacote que não existe ou sem tela inicial.
+        if (o.trim().startsWith("** no activities found to run")) {
+            return "O app não está instalado no aparelho ou não tem tela para abrir. Confira o "
+                    + "\"Pacote do app\" (bloco 3).";
+        }
         int at = o.indexOf("exception occurred while executing");
         if (at < 0 || at > 200) return null;
         if (o.contains("non-test admin")) {
@@ -244,7 +249,9 @@ public final class AdbCommands {
             header("Apps"),
             run("Listar apps instalados (de terceiros)", "pm list packages -3"),
             run("Versão do app", "dumpsys package " + PACKAGE + " 2>/dev/null | grep -m2 -E 'versionName|versionCode'"),
-            run("Abrir app", "monkey -p " + PACKAGE + " -c android.intent.category.LAUNCHER 1"),
+            // O monkey despeja ~15 linhas de depuração; o grep deixa só a de erro (sucesso = nada).
+            run("Abrir app", "monkey -p " + PACKAGE + " -c android.intent.category.LAUNCHER 1 2>&1"
+                    + " | grep -E 'aborted|Error|Exception'"),
             run("Forçar parada do app", "am force-stop " + PACKAGE),
             danger("Limpar dados do app", "pm clear " + PACKAGE),
             danger("Desinstalar app", "pm uninstall " + PACKAGE),
