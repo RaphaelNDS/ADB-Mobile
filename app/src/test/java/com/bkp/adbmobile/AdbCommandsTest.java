@@ -1,0 +1,211 @@
+package com.bkp.adbmobile;
+
+import org.junit.Test;
+
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
+
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
+
+public class AdbCommandsTest {
+
+    /** Começo da saída do Android quando um comando como dpm ou cmd falha. */
+    private static final String EXCEPTION = "Exception occurred while executing 'set-device-owner':\n";
+
+    // ---------- failure() ----------
+
+    @Test
+    public void failure_semSaida_naoEhFalha() {
+        assertNull(AdbCommands.failure(null));
+        assertNull(AdbCommands.failure(""));
+    }
+
+    @Test
+    public void failure_saidaNormal_naoEhFalha() {
+        assertNull(AdbCommands.failure("eth_device_conn = 2"));
+        assertNull(AdbCommands.failure("Success: Device owner set to package br.com.backupautomacao.kiosk"));
+    }
+
+    @Test
+    public void failure_excecaoNoMeioDeUmDumpsys_naoEhFalha() {
+        // Um log ou dumpsys pode citar a frase bem depois do começo; não é o comando que falhou.
+        StringBuilder out = new StringBuilder();
+        for (int i = 0; i < 20; i++) out.append("linha qualquer do dumpsys\n");
+        out.append(EXCEPTION).append("java.lang.IllegalStateException: x");
+        assertNull(AdbCommands.failure(out.toString()));
+    }
+
+    @Test
+    public void failure_removerDeviceOwnerDeKioskNormal() {
+        String msg = AdbCommands.failure(EXCEPTION
+                + "java.lang.SecurityException: Attempt to remove non-test admin ComponentInfo{...}");
+        assertTrue(msg, msg.contains("testOnly"));
+    }
+
+    @Test
+    public void failure_contasNoAparelho() {
+        String msg = AdbCommands.failure(EXCEPTION
+                + "java.lang.IllegalStateException: Not allowed to set the device owner because there "
+                + "are already some accounts on the device");
+        assertTrue(msg, msg.contains("contas cadastradas"));
+    }
+
+    @Test
+    public void failure_variosUsuarios() {
+        String msg = AdbCommands.failure(EXCEPTION
+                + "java.lang.IllegalStateException: Not allowed to set the device owner because there "
+                + "are already several users on the device");
+        assertTrue(msg, msg.contains("mais de um usuário"));
+    }
+
+    @Test
+    public void failure_jaExisteDeviceOwner() {
+        String msg = AdbCommands.failure(EXCEPTION
+                + "java.lang.IllegalStateException: Trying to set the device owner (x), but device "
+                + "owner (y) is already set.");
+        assertTrue(msg, msg.contains("Já existe um Device Owner"));
+    }
+
+    @Test
+    public void failure_aparelhoJaConfigurado() {
+        String msg = AdbCommands.failure(EXCEPTION
+                + "java.lang.IllegalStateException: Not allowed to set the device owner because the "
+                + "device has already been provisioned");
+        assertTrue(msg, msg.contains("já foi configurado"));
+    }
+
+    @Test
+    public void failure_kioskNaoInstalado() {
+        String msg = AdbCommands.failure(EXCEPTION
+                + "java.lang.IllegalArgumentException: Unknown admin: ComponentInfo{...}");
+        assertTrue(msg, msg.contains("não está instalado"));
+    }
+
+    @Test
+    public void failure_erroDesconhecido_mostraALinhaDaExcecao() {
+        assertEquals("O comando falhou: java.lang.IllegalArgumentException: Bad argument",
+                AdbCommands.failure(EXCEPTION + "java.lang.IllegalArgumentException: Bad argument\n"
+                        + "\tat com.android.server.Foo.bar(Foo.java:1)"));
+    }
+
+    @Test
+    public void failure_semLinhaDeExcecao_mensagemGenerica() {
+        assertEquals("O comando falhou.", AdbCommands.failure(EXCEPTION + "algo deu errado"));
+    }
+
+    @Test
+    public void failure_ignoraMaiusculas() {
+        assertNotNull(AdbCommands.failure("EXCEPTION OCCURRED WHILE EXECUTING 'x':\nUNKNOWN ADMIN"));
+    }
+
+    // ---------- lista de comandos prontos ----------
+
+    @Test
+    public void presets_comecaComTituloETodoItemTemComando() {
+        AdbCommands.Preset[] all = AdbCommands.PRESETS;
+        assertTrue("a lista deve começar com um título de grupo", all[0].isHeader());
+        assertFalse("o último item não pode ser título", all[all.length - 1].isHeader());
+        for (int i = 0; i < all.length; i++) {
+            AdbCommands.Preset p = all[i];
+            assertNotNull("sem nome na posição " + i, p.label);
+            assertFalse("o pronto não pode ser marcado como salvo: " + p.label, p.userSaved);
+            if (p.isHeader() && all[i + 1].isHeader()) fail("grupo vazio: " + p.label);
+        }
+    }
+
+    @Test
+    public void presets_nomesUnicos() {
+        // A última escolha é lembrada pelo nome; dois iguais fariam o app abrir no errado.
+        Set<String> seen = new HashSet<>();
+        for (AdbCommands.Preset p : AdbCommands.PRESETS) {
+            if (p.isHeader()) continue;
+            assertTrue("nome repetido: " + p.label, seen.add(p.key()));
+        }
+    }
+
+    @Test
+    public void presets_leituraTemNome() {
+        for (AdbCommands.Preset p : AdbCommands.PRESETS) {
+            if (p.read != null) assertNotNull("leitura sem nome: " + p.label, p.readName);
+        }
+    }
+
+    @Test
+    public void presets_deviceOwnerPedeConfirmacaoEStatusNao() {
+        assertTrue(find("Kiosk: definir como Device Owner").confirm);
+        assertTrue(find("Kiosk: remover Device Owner").confirm);
+        assertTrue(find("Reiniciar aparelho").confirm);
+        AdbCommands.Preset status = find("Kiosk: status");
+        assertFalse(status.confirm);
+        assertTrue(status.command.contains("br.com.backupautomacao.kiosk"));
+    }
+
+    // ---------- positionOf() ----------
+
+    private static final AdbCommands.Preset HEADER = AdbCommands.header("Grupo");
+    private static final AdbCommands.Preset BATERIA = new AdbCommands.Preset(
+            "Bateria", "dumpsys battery", null, null, false, null);
+    private static final AdbCommands.Preset MEMORIA = new AdbCommands.Preset(
+            "Memória", "cat /proc/meminfo", null, null, false, null);
+    private static final AdbCommands.Preset SALVO_BATERIA = AdbCommands.saved("Bateria", "dumpsys battery | head", false);
+
+    /** [0] Meus comandos, [1] salvo "Bateria", [2] Grupo, [3] Bateria, [4] Memória */
+    private static List<AdbCommands.Preset> listWithSaved() {
+        return new ArrayList<>(Arrays.asList(
+                AdbCommands.header(AdbCommands.MY_COMMANDS), SALVO_BATERIA, HEADER, BATERIA, MEMORIA));
+    }
+
+    @Test
+    public void positionOf_achaPelaChave() {
+        assertEquals(4, AdbCommands.positionOf(listWithSaved(), "Memória", 0));
+    }
+
+    @Test
+    public void positionOf_salvoENaoSeConfundemComOMesmoNome() {
+        List<AdbCommands.Preset> list = listWithSaved();
+        assertEquals(1, AdbCommands.positionOf(list, SALVO_BATERIA.key(), 0));
+        assertEquals(3, AdbCommands.positionOf(list, BATERIA.key(), 0));
+        assertEquals("meu:Bateria", SALVO_BATERIA.key());
+    }
+
+    @Test
+    public void positionOf_chaveQueNaoExisteMais_primeiroPronto() {
+        // Ex.: o comando salvo foi excluído. Volta para o primeiro pronto, não para um salvo.
+        assertEquals(3, AdbCommands.positionOf(listWithSaved(), "meu:Excluído", 0));
+        assertEquals(3, AdbCommands.positionOf(listWithSaved(), "", 5));
+    }
+
+    @Test
+    public void positionOf_indiceAntigoContaSoOsProntos() {
+        // Até a 2.9 o índice não contava títulos nem salvos: 1 = segundo pronto (Memória).
+        assertEquals(3, AdbCommands.positionOf(listWithSaved(), null, 0));
+        assertEquals(4, AdbCommands.positionOf(listWithSaved(), null, 1));
+    }
+
+    @Test
+    public void positionOf_indiceAntigoForaDaLista_primeiroPronto() {
+        assertEquals(3, AdbCommands.positionOf(listWithSaved(), null, 99));
+    }
+
+    @Test
+    public void positionOf_listaReal_ultimaEscolhaPeloNome() {
+        List<AdbCommands.Preset> list = Arrays.asList(AdbCommands.PRESETS);
+        int at = AdbCommands.positionOf(list, "Kiosk: status", 0);
+        assertEquals("Kiosk: status", list.get(at).label);
+    }
+
+    private static AdbCommands.Preset find(String label) {
+        for (AdbCommands.Preset p : AdbCommands.PRESETS) {
+            if (label.equals(p.label)) return p;
+        }
+        throw new AssertionError("comando não encontrado: " + label);
+    }
+}

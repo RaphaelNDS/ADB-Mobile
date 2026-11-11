@@ -120,6 +120,28 @@ public final class AdbCommands {
         return new Preset(name, command, null, null, confirm, null, true);
     }
 
+    /**
+     * Posição em {@code list} do comando escolhido da última vez. Até a 2.9 era salvo o índice
+     * ({@code oldIndex}) numa lista sem títulos de grupo nem comandos salvos; agora é salva a
+     * chave ({@link Preset#key()}), que não muda se a lista ganhar itens. Com {@code key} null
+     * vale o índice antigo; com uma chave que não existe mais, o primeiro comando pronto.
+     */
+    public static int positionOf(java.util.List<Preset> list, String key, int oldIndex) {
+        int first = -1;
+        int count = 0;
+        for (int i = 0; i < list.size(); i++) {
+            Preset p = list.get(i);
+            if (p.isHeader()) continue;
+            if (key != null && p.key().equals(key)) return i;
+            // A lista antiga por índice não tinha os comandos salvos.
+            if (p.userSaved) continue;
+            if (first < 0) first = i;
+            if (key == null && count == oldIndex) return i;
+            count++;
+        }
+        return first;
+    }
+
     private static Preset run(String label, String command) {
         return new Preset(label, command, null, null, false, null);
     }

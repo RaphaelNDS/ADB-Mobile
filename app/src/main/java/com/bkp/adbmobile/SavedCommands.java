@@ -22,7 +22,12 @@ public final class SavedCommands {
     private final SharedPreferences prefs;
 
     public SavedCommands(Context context) {
-        prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+        this(context.getSharedPreferences(PREFS, Context.MODE_PRIVATE));
+    }
+
+    /** Usado nos testes, com preferências em memória. */
+    SavedCommands(SharedPreferences prefs) {
+        this.prefs = prefs;
     }
 
     public List<AdbCommands.Preset> load() {
