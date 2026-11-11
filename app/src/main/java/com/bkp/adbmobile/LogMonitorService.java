@@ -186,6 +186,19 @@ public class LogMonitorService extends Service {
         event("Porta de conexão mudou: " + old + " → " + newPort + " (encontrada na rede).");
     }
 
+    /**
+     * Por que o log vai ser salvo, para o Registro. "reiniciou" só quando havia um processo e o
+     * PID mudou; se não havia processo, o app foi "aberto" (veio para a frente) ou "iniciou de
+     * novo" (o processo voltou sem mudar o que está na tela, ex.: travou e reabriu sozinho).
+     * Só muda o texto: quando salvar continua decidido no loop().
+     */
+    static String captureReason(boolean opened, String lastPid, String pid) {
+        if (lastPid != null && !lastPid.isEmpty() && !pid.isEmpty() && !pid.equals(lastPid)) {
+            return "reiniciou (PID " + lastPid + " → " + pid + ")";
+        }
+        return opened ? "aberto" : "iniciou de novo (PID " + pid + ")";
+    }
+
     private void loop() {
         Adb.Shell shell = null;
         String last = null; // null = primeiro ciclo
@@ -214,8 +227,7 @@ public class LogMonitorService extends Service {
                         // Já estava aberto quando o monitoramento começou (comum em app de quiosque).
                         event(pkg + " já está aberto; capturando log agora...");
                     } else {
-                        event(pkg + (restarted ? " reiniciou (PID " + (lastPid.isEmpty() ? "-" : lastPid)
-                                + " → " + pid + ")" : " aberto") + "; capturando log em "
+                        event(pkg + " " + captureReason(opened, lastPid, pid) + "; capturando log em "
                                 + CAPTURE_DELAY_MS / 1000 + " s...");
                         Thread.sleep(CAPTURE_DELAY_MS);
                     }
