@@ -202,6 +202,45 @@ public class AdbCommandsTest {
         assertEquals("Kiosk: status", list.get(at).label);
     }
 
+    // ---------- logLine() ----------
+
+    @Test
+    public void logLine_comandoProntoSemEdicao_mostraONome() {
+        AdbCommands.Preset status = find("Kiosk: status");
+        assertEquals("$ Kiosk: status", AdbCommands.logLine(status, status.command, status.command));
+    }
+
+    @Test
+    public void logLine_comandoSalvo_mostraONome() {
+        assertEquals("$ Bateria", AdbCommands.logLine(SALVO_BATERIA, SALVO_BATERIA.command, "dumpsys battery | head"));
+    }
+
+    @Test
+    public void logLine_espacosNasPontas_aindaContaComoSemEdicao() {
+        assertEquals("$ Bateria", AdbCommands.logLine(BATERIA, "dumpsys battery", "  dumpsys battery \n"));
+    }
+
+    @Test
+    public void logLine_textoEditado_mostraOComando() {
+        assertEquals("$ dumpsys battery | grep level",
+                AdbCommands.logLine(BATERIA, "dumpsys battery", "dumpsys battery | grep level"));
+    }
+
+    @Test
+    public void logLine_comandoPersonalizado_mostraOComando() {
+        AdbCommands.Preset custom = find("Comando personalizado");
+        assertEquals("$ getprop ro.product.model", AdbCommands.logLine(custom, "", "getprop ro.product.model"));
+    }
+
+    @Test
+    public void logLine_pacoteTrocado_usaOTextoJaPreenchido() {
+        // "Versão do app" tem {pacote}; o campo mostra o comando já com o pacote do Log automático.
+        AdbCommands.Preset version = find("Versão do app");
+        String filled = version.command.replace(AdbCommands.PACKAGE, "br.com.backupautomacao.kiosk");
+        assertEquals("$ Versão do app", AdbCommands.logLine(version, filled, filled));
+        assertEquals("$ " + version.command, AdbCommands.logLine(version, filled, version.command));
+    }
+
     private static AdbCommands.Preset find(String label) {
         for (AdbCommands.Preset p : AdbCommands.PRESETS) {
             if (label.equals(p.label)) return p;

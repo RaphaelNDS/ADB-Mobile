@@ -121,6 +121,18 @@ public final class AdbCommands {
     }
 
     /**
+     * Linha do Registro ao executar {@code cmd}: o nome do comando pronto ou salvo quando o
+     * texto do campo é o dele sem edição ({@code presetText} = o comando já com o pacote trocado),
+     * para comandos longos como "Kiosk: status" não encherem a tela; o texto completo quando foi
+     * digitado ou alterado, porque aí é a única referência do que rodou.
+     */
+    public static String logLine(Preset preset, String presetText, String cmd) {
+        boolean named = preset != null && !preset.isHeader() && !preset.command.isEmpty()
+                && presetText != null && cmd.trim().equals(presetText.trim());
+        return "$ " + (named ? preset.label : cmd);
+    }
+
+    /**
      * Posição em {@code list} do comando escolhido da última vez. Até a 2.9 era salvo o índice
      * ({@code oldIndex}) numa lista sem títulos de grupo nem comandos salvos; agora é salva a
      * chave ({@link Preset#key()}), que não muda se a lista ganhar itens. Com {@code key} null

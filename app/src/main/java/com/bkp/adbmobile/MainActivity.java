@@ -814,7 +814,7 @@ public class MainActivity extends Activity {
         if (isRemote()) {
             final List<Devices.Device> targets = selectedDevices();
             if (targets == null) return;
-            start(targetsLabel(targets) + " $ " + cmd);
+            start(targetsLabel(targets) + " " + AdbCommands.logLine(preset, fill(preset.command), cmd));
             log("Conectando... se o alvo solicitar, autorize a depuração na tela dele.");
             runOnDevices(targets, read == null ? "Executado" : "Aplicado", d -> {
                 String[] out = read == null
@@ -827,7 +827,7 @@ public class MainActivity extends Activity {
             return;
         }
 
-        start("$ " + cmd);
+        start(AdbCommands.logLine(preset, fill(preset.command), cmd));
         background(() -> {
             // 1) Root, se existir (testado antes para não executar o comando duas vezes)
             boolean root;
@@ -871,12 +871,12 @@ public class MainActivity extends Activity {
         if (isRemote()) {
             final List<Devices.Device> targets = selectedDevices();
             if (targets == null) return;
-            start(targetsLabel(targets) + " $ " + read);
+            start(targetsLabel(targets) + " Ler valor atual: " + name);
             runOnDevices(targets, "Lido", d -> name + " = "
                     + Adb.remoteShell(this, d.host, d.port, portChangedFor(d.host), read)[0]);
             return;
         }
-        start("$ " + read);
+        start("Ler valor atual: " + name);
         background(() -> {
             try {
                 finish(Status.INFO, "Valor atual: " + name + " = " + Adb.shell(this, read));
