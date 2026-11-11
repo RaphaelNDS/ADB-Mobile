@@ -16,8 +16,17 @@ public final class AdbCommands {
     private static final String KIOSK_ADMIN =
             "br.com.backupautomacao.kiosk/br.com.backupautomacao.kiosk.admin.AdminReceiver";
 
-    /** Mostra o Device Owner atual (Android 10+). */
-    private static final String DEVICE_OWNER_READ = "dpm list-owners";
+    /**
+     * Mostra o componente do Device Owner atual, ou "nenhum". Usa o dumpsys, que existe em todas
+     * as versões ("dpm list-owners" só existe a partir do Android 10). O trecho lido é:
+     * <pre>
+     *   Device Owner:
+     *     admin=ComponentInfo{pacote/classe}
+     * </pre>
+     */
+    private static final String DEVICE_OWNER_READ = "o=$(dumpsys device_policy | grep -A2 'Device Owner:'"
+            + " | grep -o 'ComponentInfo{[^}]*}' | head -n 1 | sed 's/ComponentInfo{\\(.*\\)}/\\1/');"
+            + " echo ${o:-nenhum}";
 
     private static final String DEVICE_OWNER = "Device Owner";
     private static final String ETHERNET = "Ethernet (eth_device_conn)";
