@@ -1,0 +1,28 @@
+# Gradle e saídas de build (geradas a cada compilação)
+.gradle/
+build/
+/captures
+.externalNativeBuild/
+.cxx/
+
+# Caminho do SDK desta máquina
+/local.properties
+
+# Android Studio: arquivos pessoais e caches
+*.iml
+.idea/caches/
+.idea/libraries/
+.idea/workspace.xml
+.idea/modules.xml
+.idea/misc.xml
+.idea/deploymentTargetSelector.xml
+.idea/AndroidProjectSystem.xml
+.idea/material_theme_project_new.xml
+.idea/navEditor.xml
+.idea/assetWizardSettings.xml
+.idea/deviceManager.xml
+.idea/studiobot.xml
+
+# Sistema
+.DS_Store
+Thumbs.db
