@@ -370,7 +370,7 @@ public class MainActivity extends Activity {
                     results[index] = task.run(d);
                     log(prefix + "OK" + (results[index].isEmpty() ? "" : ": " + results[index]));
                 } catch (AdbPairingRequiredException e) {
-                    errors[index] = "Exige pareamento. Conclua a etapa 1.";
+                    errors[index] = NEEDS_PAIRING;
                     log(prefix + "ERRO: " + errors[index]);
                 } catch (Exception e) {
                     errors[index] = commandError(e);
@@ -399,6 +399,14 @@ public class MainActivity extends Activity {
 
     private void finishDevices(List<Devices.Device> targets, String verb, String[] errors, String[] results) {
         int total = targets.size();
+        List<String> unpaired = new ArrayList<>();
+        for (int i = 0; i < total; i++) {
+            if (NEEDS_PAIRING.equals(errors[i])) unpaired.add(targets.get(i).label());
+        }
+        if (!unpaired.isEmpty()) {
+            final String names = TextUtils.join(", ", unpaired);
+            runOnUiThread(() -> showPairingDialog(names));
+        }
         if (total == 1) {
             String label = targets.get(0).label();
             if (errors[0] != null) finish(Status.ERROR, "Falha em " + label + ": " + errors[0]);
@@ -726,7 +734,7 @@ public class MainActivity extends Activity {
                 finish(Status.SUCCESS, read == null ? "Executado neste aparelho."
                         : "Aplicado neste aparelho. " + name + " = " + value);
             } catch (AdbPairingRequiredException e) {
-                finish(Status.ERROR, "Aparelho ainda não pareado. Conclua a etapa 1.");
+                pairingRequired(null);
             } catch (Exception e) {
                 finish(Status.ERROR, "Falha: " + commandError(e));
             }
@@ -751,7 +759,7 @@ public class MainActivity extends Activity {
             try {
                 finish(Status.INFO, "Valor atual: " + name + " = " + Adb.shell(this, read));
             } catch (AdbPairingRequiredException e) {
-                finish(Status.ERROR, "Aparelho ainda não pareado. Conclua a etapa 1.");
+                pairingRequired(null);
             } catch (Exception e) {
                 try {
                     finish(Status.INFO, "Valor atual (root): " + name + " = " + Adb.su(read));
@@ -874,7 +882,7 @@ public class MainActivity extends Activity {
                 Adb.openLocal(this).install(apk, progress);
                 finish(Status.SUCCESS, "Instalado neste aparelho.");
             } catch (AdbPairingRequiredException e) {
-                finish(Status.ERROR, "Aparelho ainda não pareado. Conclua a etapa 1.");
+                pairingRequired(null);
             } catch (Exception e) {
                 finish(Status.ERROR, "Falha na instalação: " + Adb.describe(e));
             }
@@ -988,7 +996,7 @@ public class MainActivity extends Activity {
                 Adb.openLocal(this).push(file, remotePath, progress);
                 finish(Status.SUCCESS, "Enviado neste aparelho: " + remotePath);
             } catch (AdbPairingRequiredException e) {
-                finish(Status.ERROR, "Aparelho ainda não pareado. Conclua a etapa 1.");
+                pairingRequired(null);
             } catch (Exception e) {
                 finish(Status.ERROR, "Falha no envio: " + Adb.describe(e));
             }
@@ -1025,8 +1033,7 @@ public class MainActivity extends Activity {
                     shell.close();
                 }
             } catch (AdbPairingRequiredException e) {
-                finish(Status.ERROR, target != null ? "O aparelho alvo exige pareamento. Conclua a etapa 1."
-                        : "Aparelho ainda não pareado. Conclua a etapa 1.");
+                pairingRequired(target != null ? target[0] + ":" + target[1] : null);
             } catch (Exception e) {
                 finish(Status.ERROR, errorPrefix + Adb.describe(e));
             }
@@ -1266,8 +1273,7 @@ public class MainActivity extends Activity {
                 runOnUiThread(() -> showRemoteBrowser(open, target, firstDir, first));
             } catch (AdbPairingRequiredException e) {
                 if (shell != null) shell.close();
-                finish(Status.ERROR, target != null ? "O aparelho alvo exige pareamento. Conclua a etapa 1."
-                        : "Aparelho ainda não pareado. Conclua a etapa 1.");
+                pairingRequired(target != null ? target[0] + ":" + target[1] : null);
             } catch (Exception e) {
                 if (shell != null) shell.close();
                 finish(Status.ERROR, "Não foi possível abrir as pastas: " + Adb.describe(e));
@@ -1589,8 +1595,7 @@ public class MainActivity extends Activity {
                 finish(Status.SUCCESS, "Log salvo (" + lines + " linhas): " + fileName(uri));
             } catch (AdbPairingRequiredException e) {
                 DeviceLog.delete(getContentResolver(), uri);
-                finish(Status.ERROR, t != null ? "O aparelho alvo exige pareamento. Conclua a etapa 1."
-                        : "Aparelho ainda não pareado. Conclua a etapa 1.");
+                pairingRequired(t != null ? t[0] + ":" + t[1] : null);
             } catch (Exception e) {
                 DeviceLog.delete(getContentResolver(), uri);
                 finish(Status.ERROR, "Não foi possível gerar o log: " + Adb.describe(e));
@@ -1808,6 +1813,44 @@ public class MainActivity extends Activity {
         Map<String, Adb.Progress> map = new LinkedHashMap<>();
         for (Devices.Device d : targets) map.put(d.address(), board.item(d.label()));
         return map;
+    }
+
+    /** Motivo de falha de um aparelho que ainda não pareou com o app. */
+    private static final String NEEDS_PAIRING = "Exige pareamento. Conclua a etapa 1.";
+
+    /**
+     * Termina a operação com o aviso de pareamento e abre uma janela explicando: só o texto no
+     * status passava despercebido e parecia que o app tinha travado.
+     * {@code target} é o aparelho remoto ("ip:porta"), ou null para este aparelho.
+     */
+    private void pairingRequired(final String target) {
+        finish(Status.ERROR, target != null ? "O aparelho alvo exige pareamento. Conclua a etapa 1."
+                : "Aparelho ainda não pareado. Conclua a etapa 1.");
+        runOnUiThread(() -> showPairingDialog(target));
+    }
+
+    /** Janela "Pareamento necessário" com atalho para a etapa 1. */
+    private void showPairingDialog(String target) {
+        if (isFinishing() || isDestroyed()) return;
+        String message = target == null
+                ? "Este aparelho ainda não foi pareado com o ADB Mobile, por isso o comando não foi "
+                + "executado.\n\nFaça o pareamento na etapa 1 (só é preciso uma vez) e tente de novo."
+                : target + " ainda não foi pareado com o ADB Mobile, por isso o comando não foi "
+                + "executado nele.\n\nFaça o pareamento na etapa 1 (só é preciso uma vez) e tente de novo.";
+        new AlertDialog.Builder(this)
+                .setTitle("Pareamento necessário")
+                .setMessage(message)
+                .setPositiveButton("Ir para o pareamento", (d, w) -> goToPairing())
+                .setNegativeButton("Fechar", null)
+                .show();
+    }
+
+    /** Rola até o cartão de pareamento e põe o cursor no campo da porta. */
+    private void goToPairing() {
+        final View card = findViewById(R.id.pairCard);
+        final android.widget.ScrollView scroll = findViewById(R.id.scroll);
+        scroll.post(() -> scroll.smoothScrollTo(0, card.getTop()));
+        portField.requestFocus();
     }
 
     /** Fim de uma operação (chamado de qualquer thread). */
