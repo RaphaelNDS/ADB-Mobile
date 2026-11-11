@@ -232,6 +232,10 @@ public class LogMonitorService extends Service {
                         Thread.sleep(CAPTURE_DELAY_MS);
                     }
                     capture(shell);
+                    // O PID lido antes pode estar vazio ou velho: ao abrir, a tela aparece antes do
+                    // processo subir. Sem reler, o ciclo seguinte via "iniciou de novo" e salvava
+                    // um segundo log do mesmo processo (visto no tablet: PID - e depois 19304).
+                    pid = Adb.foregroundAndPid(shell, pkg)[1];
                 }
                 last = current;
                 lastPid = pid;
