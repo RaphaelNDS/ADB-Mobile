@@ -376,11 +376,25 @@ public class MainActivity extends Activity {
                     errors[index] = commandError(e);
                     log(prefix + "ERRO: " + errors[index]);
                 }
-                if (done.incrementAndGet() < total) return;
+                int finished = done.incrementAndGet();
+                if (finished < total) {
+                    showDevicesProgress(done, finished, total);
+                    return;
+                }
                 // O incrementAndGet garante que o último vê os resultados gravados pelos outros.
                 finishDevices(targets, verb, errors, results);
             });
         }
+    }
+
+    /** "Em andamento... 1 de 3 concluído" no status, enquanto não há outro progresso na tela. */
+    private void showDevicesProgress(final AtomicInteger done, final int finished, final int total) {
+        runOnUiThread(() -> {
+            // Ignora se a operação já terminou ou se um aviso mais novo já foi mostrado.
+            if (activeBoard != null || done.get() != finished) return;
+            setStatus(Status.INFO, "Em andamento... " + finished + " de " + total
+                    + (finished == 1 ? " concluído" : " concluídos"));
+        });
     }
 
     private void finishDevices(List<Devices.Device> targets, String verb, String[] errors, String[] results) {
