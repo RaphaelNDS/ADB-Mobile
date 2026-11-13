@@ -367,6 +367,138 @@ final class CommandsPanel {
         });
     }
 
+    /** Recarrega "Meus comandos" (ex.: depois de importar) mantendo o comando escolhido e o texto. */
+    void reloadSaved() {
+        reloadPresets(selectedPreset().key());
+    }
+
+    // ---------- Vários comandos (lote) ----------
+
+    private static final String BATCH_KEYS = "batchKeys";
+
+    /** Escolhe os comandos do lote (a última escolha vem marcada). */
+    void chooseBatch() {
+        final List<AdbCommands.Preset> items = new ArrayList<>();
+        for (AdbCommands.Preset p : presets) if (!p.isHeader() && !p.command.isEmpty()) items.add(p);
+        List<String> last = new ArrayList<>();
+        try {
+            org.json.JSONArray arr = new org.json.JSONArray(a.prefs.getString(BATCH_KEYS, "[]"));
+            for (int i = 0; i < arr.length(); i++) last.add(arr.getString(i));
+        } catch (org.json.JSONException ignored) {
+            // Escolha anterior ilegível: começa sem nada marcado.
+        }
+        final String[] labels = new String[items.size()];
+        final boolean[] checked = new boolean[items.size()];
+        for (int i = 0; i < items.size(); i++) {
+            AdbCommands.Preset p = items.get(i);
+            labels[i] = (p.userSaved ? "★ " : "") + p.label;
+            checked[i] = last.contains(p.key());
+        }
+        new AlertDialog.Builder(a)
+                .setTitle("Vários comandos (rodam na ordem da lista)")
+                .setMultiChoiceItems(labels, checked, (d, which, isChecked) -> checked[which] = isChecked)
+                .setPositiveButton("Continuar", (d, w) -> {
+                    List<String> keys = new ArrayList<>();
+                    for (int i = 0; i < items.size(); i++) if (checked[i]) keys.add(items.get(i).key());
+                    a.prefs.edit().putString(BATCH_KEYS, new org.json.JSONArray(keys).toString()).apply();
+                    confirmBatch(AdbCommands.batchSteps(items, keys));
+                })
+                .setNegativeButton("Cancelar", null)
+                .show();
+    }
+
+    private void confirmBatch(final List<AdbCommands.Preset> steps) {
+        if (steps.isEmpty()) {
+            a.setStatus(Status.ERROR, "Marque pelo menos um comando.");
+            return;
+        }
+        final List<String> commands = new ArrayList<>();
+        for (AdbCommands.Preset p : steps) {
+            String cmd = fill(p.command);
+            if (cmd.contains(AdbCommands.PACKAGE)) {
+                a.setStatus(Status.ERROR, "\"" + p.label + "\" usa o pacote do app: informe-o em \"Log automático\".");
+                return;
+            }
+            commands.add(cmd);
+        }
+        String where = "no aparelho alvo";
+        if (a.isRemote()) {
+            where = a.devices.whereSelected();
+            if (where == null) return;
+        }
+        StringBuilder msg = new StringBuilder("Executar " + where + ", nesta ordem?\n");
+        List<String> sensitive = new ArrayList<>();
+        for (int i = 0; i < steps.size(); i++) {
+            msg.append("\n").append(i + 1).append(". ").append(steps.get(i).label);
+            if (steps.get(i).confirm) sensitive.add(steps.get(i).label);
+        }
+        msg.append("\n\nSe um comando falhar, os seguintes não rodam naquele aparelho.");
+        if (!sensitive.isEmpty()) {
+            msg.append("\n\nAtenção: inclui comandos que normalmente pedem confirmação: ")
+                    .append(android.text.TextUtils.join(", ", sensitive)).append(".");
+        }
+        new AlertDialog.Builder(a)
+                .setTitle("Executar " + steps.size() + " comando(s)")
+                .setMessage(msg.toString())
+                .setPositiveButton("Executar", (d, w) -> runBatch(steps, commands))
+                .setNegativeButton("Cancelar", null)
+                .show();
+    }
+
+    /** Roda os passos em sequência numa sessão só; para no primeiro erro (por aparelho). */
+    private static String runSteps(MainActivity a, Adb.Shell shell, String prefix,
+                                   List<AdbCommands.Preset> steps, List<String> commands) throws Exception {
+        int total = steps.size();
+        for (int i = 0; i < total; i++) {
+            String line = AdbCommands.batchStepLine(i, total, steps.get(i));
+            try {
+                String out = shell.run(commands.get(i));
+                checkOutput(out);
+                a.log(prefix + line + ": OK");
+                a.logOutput(prefix, out);
+            } catch (AdbPairingRequiredException e) {
+                throw e;
+            } catch (Exception e) {
+                a.log(prefix + line + ": ERRO");
+                throw new IOException("parou em " + line + ": " + DeviceRunner.errorText(e)
+                        + (i + 1 < total ? " (" + (total - i - 1) + " não executado(s))" : ""));
+            }
+        }
+        return total + " comando(s) OK";
+    }
+
+    private void runBatch(final List<AdbCommands.Preset> steps, final List<String> commands) {
+        final String title = "Vários comandos (" + steps.size() + ")";
+        if (a.isRemote()) {
+            final List<Devices.Device> targets = a.devices.selected();
+            if (targets == null) return;
+            a.start(DevicesPanel.label(targets) + " " + title);
+            a.log("Conectando... se o alvo solicitar, autorize a depuração na tela dele.");
+            a.runner.run(targets, "Executado", d -> {
+                Adb.Shell shell = Adb.openRemote(a, d.host, d.port, a.devices.portChangedFor(d.host));
+                try {
+                    return runSteps(a, shell, "[" + d.label() + "] ", steps, commands);
+                } finally {
+                    shell.close();
+                }
+            });
+            return;
+        }
+        a.start(title);
+        a.background(() -> {
+            Adb.Shell shell = Adb.openLocal(a);
+            try {
+                a.finish(Status.SUCCESS, "Vários comandos: " + runSteps(a, shell, "", steps, commands) + ".");
+            } catch (AdbPairingRequiredException e) {
+                a.pairingRequired(null);
+            } catch (Exception e) {
+                a.finish(Status.ERROR, "Vários comandos: " + Adb.describe(e));
+            } finally {
+                shell.close();
+            }
+        });
+    }
+
     void readValue() {
         final AdbCommands.Preset preset = selectedPreset();
         final String read = preset.read;

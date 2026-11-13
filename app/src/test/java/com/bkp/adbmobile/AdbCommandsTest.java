@@ -361,4 +361,19 @@ public class AdbCommandsTest {
         AdbCommands.Preset status = find("Kiosk: status");
         assertNull(AdbCommands.readAfter(status, status.command, status.command));
     }
+
+    // ---------- Vários comandos ----------
+
+    @Test
+    public void lote_naOrdemDaLista_ignoraChavesQueSumiram() {
+        java.util.List<AdbCommands.Preset> list = java.util.Arrays.asList(HEADER, SALVO_BATERIA, BATERIA, MEMORIA);
+        java.util.List<AdbCommands.Preset> steps = AdbCommands.batchSteps(list,
+                java.util.Arrays.asList(MEMORIA.key(), SALVO_BATERIA.key(), "comando excluído"));
+        assertEquals(java.util.Arrays.asList(SALVO_BATERIA, MEMORIA), steps);
+    }
+
+    @Test
+    public void lote_linhaDoPasso() {
+        assertEquals("[2/3] Bateria", AdbCommands.batchStepLine(1, 3, BATERIA));
+    }
 }

@@ -215,6 +215,13 @@ public final class Adb {
         /** Grava a saída do comando em {@code out} conforme chega (para saídas grandes). */
         void stream(String command, OutputStream out) throws Exception;
 
+        /**
+         * Como stream(), para comandos que não terminam sozinhos (ex.: logcat sem -d): grava a
+         * saída em {@code out} até {@code stopper.stop()} ser chamado de outro thread, ou o
+         * comando acabar. Parar não é erro.
+         */
+        void follow(String command, OutputStream out, Stopper stopper) throws Exception;
+
         /** Instala o APK no aparelho (atualiza se já existir, mantendo os dados). Devolve a saída do pm. */
         String install(File apk, Progress progress) throws Exception;
 
@@ -225,6 +232,38 @@ public final class Adb {
         long pull(String remotePath, OutputStream out, Progress progress) throws Exception;
 
         void close();
+    }
+
+    /**
+     * Interrompe um {@link Shell#follow}: stop() pode ser chamado de qualquer thread, antes ou
+     * durante. Quem roda o comando registra em {@link #onStop} como fechar o que está lendo.
+     */
+    public static final class Stopper {
+        private volatile boolean stopped;
+        private Runnable onStop;
+
+        public void stop() {
+            Runnable r;
+            synchronized (this) {
+                stopped = true;
+                r = onStop;
+            }
+            if (r != null) r.run();
+        }
+
+        public boolean isStopped() {
+            return stopped;
+        }
+
+        /** Registra como interromper; se já foi pedido para parar, interrompe na hora. */
+        void onStop(Runnable r) {
+            boolean now;
+            synchronized (this) {
+                onStop = r;
+                now = stopped;
+            }
+            if (now) r.run();
+        }
     }
 
     /** Avisada conforme os bytes de um envio/download passam (pode ser null). */
@@ -400,6 +439,11 @@ public final class Adb {
             }
 
             @Override
+            public void follow(String command, OutputStream out, Stopper stopper) throws Exception {
+                Adb.follow(manager, command, out, stopper);
+            }
+
+            @Override
             public String install(File apk, Progress progress) throws Exception {
                 return Adb.install(manager, apk, progress);
             }
@@ -452,6 +496,13 @@ public final class Adb {
                 if (root == null) run("true");
                 if (root) suStream(command, out);
                 else Adb.stream(local(context), command, out);
+            }
+
+            @Override
+            public void follow(String command, OutputStream out, Stopper stopper) throws Exception {
+                if (root == null) run("true");
+                if (root) suFollow(command, out, stopper);
+                else Adb.follow(local(context), command, out, stopper);
             }
 
             @Override
@@ -809,6 +860,125 @@ public final class Adb {
         while ((n = in.read(buf)) > 0) sink.write(buf, 0, n);
         int code = p.waitFor();
         if (code != 0) throw new IOException("su saiu com código " + code);
+    }
+
+    /** Primeira linha que o follow() pede ao shell: o PID dele, para encerrar o comando ao parar. */
+    static final String PID_MARKER = "__ADBM_PID__";
+
+    /**
+     * Comando para o follow(): informa o PID do shell e roda {@code command} como filho dele.
+     * Fechar o stream não encerra o processo no aparelho (o logcat ficava rodando); com o PID,
+     * {@link #killCommand} encerra o shell e os filhos.
+     */
+    static String followCommand(String command) {
+        return "echo " + PID_MARKER + "$$; " + command;
+    }
+
+    /** Encerra o shell {@code pid} e o que ele abriu (ex.: o logcat). */
+    static String killCommand(String pid) {
+        return "pkill -TERM -P " + pid + " 2>/dev/null; kill -TERM " + pid + " 2>/dev/null; true";
+    }
+
+    /**
+     * Repassa a saída para {@code sink}, menos a primeira linha (o PID), que vai para {@code pid}.
+     */
+    static final class PidFilter extends OutputStream {
+        private final OutputStream sink;
+        private final ByteArrayOutputStream first = new ByteArrayOutputStream();
+        volatile String pid;
+        private boolean done;
+
+        PidFilter(OutputStream sink) {
+            this.sink = sink;
+        }
+
+        @Override
+        public void write(int b) throws IOException {
+            write(new byte[]{(byte) b}, 0, 1);
+        }
+
+        @Override
+        public void write(byte[] b, int off, int len) throws IOException {
+            int i = off;
+            while (!done && i < off + len) {
+                byte c = b[i++];
+                if (c == '\n') {
+                    String line = first.toString("UTF-8").trim();
+                    if (line.startsWith(PID_MARKER)) {
+                        pid = line.substring(PID_MARKER.length()).trim();
+                    } else {
+                        // Não era a linha do PID (não deveria acontecer): não perde a saída.
+                        sink.write(first.toByteArray());
+                        sink.write('\n');
+                    }
+                    done = true;
+                } else {
+                    first.write(c);
+                }
+            }
+            if (i < off + len) sink.write(b, i, off + len - i);
+        }
+    }
+
+    /** Ver {@link Shell#follow}: lê até o comando acabar ou {@code stopper} parar. */
+    private static void follow(final AdbManager manager, String command, OutputStream sink, Stopper stopper)
+            throws Exception {
+        if (stopper.isStopped()) return;
+        final AdbStream stream = manager.openStream("shell:" + ascii(followCommand(command)));
+        final PidFilter out = new PidFilter(sink);
+        stopper.onStop(() -> {
+            String pid = out.pid;
+            if (pid != null && pid.matches("[0-9]+")) {
+                try {
+                    run(manager, killCommand(pid));
+                } catch (Exception ignored) {
+                    // Sem conexão: o processo morre junto com ela.
+                }
+            }
+            try {
+                stream.close();
+            } catch (Exception ignored) {
+                // Já fechado.
+            }
+        });
+        try {
+            InputStream in = stream.openInputStream();
+            byte[] buf = new byte[16384];
+            int n;
+            while (!stopper.isStopped() && (n = in.read(buf)) > 0) out.write(buf, 0, n);
+        } catch (IOException e) {
+            // Parar fecha o stream e faz o read() lançar "Stream closed".
+            if (!stopper.isStopped() && !stream.isClosed()) throw e;
+        } finally {
+            stream.close();
+        }
+    }
+
+    private static void suFollow(String command, OutputStream sink, Stopper stopper) throws Exception {
+        if (stopper.isStopped()) return;
+        final Process p = new ProcessBuilder("su", "-c", followCommand(command)).redirectErrorStream(true).start();
+        final PidFilter out = new PidFilter(sink);
+        stopper.onStop(() -> {
+            String pid = out.pid;
+            if (pid != null && pid.matches("[0-9]+")) {
+                try {
+                    su(killCommand(pid));
+                } catch (Exception ignored) {
+                    // Segue para o destroy().
+                }
+            }
+            p.destroy();
+        });
+        try {
+            InputStream in = p.getInputStream();
+            byte[] buf = new byte[16384];
+            int n;
+            while (!stopper.isStopped() && (n = in.read(buf)) > 0) out.write(buf, 0, n);
+        } catch (IOException e) {
+            if (!stopper.isStopped()) throw e;
+        } finally {
+            p.destroy();
+        }
     }
 
     /** Conexão ADB local (127.0.0.1), conectando se preciso. */
