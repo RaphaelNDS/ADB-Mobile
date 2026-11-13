@@ -553,6 +553,12 @@
                         android:layout_marginStart="5dp"
                         android:text="Importar" />
                 </LinearLayout>
+
+                <Button
+                    android:id="@+id/checkUpdate"
+                    style="@style/ButtonOutline"
+                    android:layout_marginTop="10dp"
+                    android:text="Verificar atualização" />
             </LinearLayout>
 
             <!-- Registro -->

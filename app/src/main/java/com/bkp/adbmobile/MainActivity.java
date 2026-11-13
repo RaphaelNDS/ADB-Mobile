@@ -94,6 +94,7 @@ public class MainActivity extends Activity {
     private AppScreens apps;
     private LiveLogcat liveLogcat;
     private ConfigBackup config;
+    private Updater updater;
     private LogHistory history;
     private final Handler main = new Handler(Looper.getMainLooper());
     /** Grava o Registro um pouco depois da última linha (várias linhas seguidas = uma gravação). */
@@ -168,6 +169,7 @@ public class MainActivity extends Activity {
         commands = new CommandsPanel(this, read);
         liveLogcat = new LiveLogcat(this);
         config = new ConfigBackup(this);
+        updater = new Updater(this);
 
         notificationPairing.setOnClickListener(v -> startNotificationPairing());
         pairManual.setOnClickListener(v -> manualPairing());
@@ -206,6 +208,7 @@ public class MainActivity extends Activity {
                     + " (v" + versionName() + ") -----");
             append("Android " + Build.VERSION.RELEASE + " (API " + Build.VERSION.SDK_INT + ") - "
                     + Build.MANUFACTURER + " " + Build.MODEL);
+            updater.checkOnStart();
         }
     }
 
@@ -637,7 +640,7 @@ public class MainActivity extends Activity {
         return (int) (value * getResources().getDisplayMetrics().density);
     }
 
-    private String versionName() {
+    String versionName() {
         try {
             return getPackageManager().getPackageInfo(getPackageName(), 0).versionName;
         } catch (Exception e) {
