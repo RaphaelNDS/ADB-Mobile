@@ -1,0 +1,27 @@
+# PRs automáticos quando as bibliotecas, o Android Gradle Plugin ou as Actions ganham versão nova.
+# Cada PR passa pelo CI (testes, lint, R8) antes de qualquer merge.
+version: 2
+updates:
+  - package-ecosystem: gradle
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      # Mudanças pequenas juntas num PR só; as grandes (major) vêm separadas.
+      gradle-menores:
+        update-types: [minor, patch]
+    ignore:
+      # 3.3.x é a última ZXing que roda no Android 5-6 sem desugaring (minSdk 21).
+      - dependency-name: com.google.zxing:core
+        update-types: [version-update:semver-major, version-update:semver-minor]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    groups:
+      actions:
+        patterns: ['*']
