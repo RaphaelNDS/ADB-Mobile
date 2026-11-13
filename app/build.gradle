@@ -35,7 +35,10 @@ android {
 
     buildTypes {
         release {
-            minifyEnabled false
+            // R8: tira o código não usado das bibliotecas (regras em proguard-rules.pro).
+            minifyEnabled true
+            shrinkResources true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
             signingConfig signingConfigs.release
         }
     }
@@ -47,13 +50,18 @@ android {
 
     packaging {
         resources {
-            excludes += ['META-INF/versions/9/OSGI-INF/MANIFEST.MF']
+            excludes += ['META-INF/versions/9/OSGI-INF/MANIFEST.MF',
+                         // Tabelas do algoritmo pós-quântico Picnic (1,2 MB): o app não usa.
+                         'org/bouncycastle/pqc/**']
         }
     }
 
     lint {
-        abortOnError false
-        checkReleaseBuilds false
+        // Erro do lint para o build (os avisos que não se aplicam estão em lint.xml).
+        lintConfig file('lint.xml')
+        abortOnError true
+        checkReleaseBuilds true
+        checkDependencies false
     }
 }
 

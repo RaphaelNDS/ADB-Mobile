@@ -1,5 +1,6 @@
 package com.bkp.adbmobile;
 
+import android.annotation.SuppressLint;
 import android.app.AlertDialog;
 import android.graphics.Typeface;
 import android.os.Handler;
@@ -69,6 +70,8 @@ final class LiveLogcat {
                 + " --pid=$p; fi";
     }
 
+    // O toque na rolagem só observa (devolve false): o clique e a acessibilidade seguem normais.
+    @SuppressLint("ClickableViewAccessibility")
     void open() {
         final Devices.Device[] t = new Devices.Device[1];
         if (!a.oneTarget("o logcat ao vivo", t)) return;
