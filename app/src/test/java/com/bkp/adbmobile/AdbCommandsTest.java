@@ -332,4 +332,33 @@ public class AdbCommandsTest {
         }
         throw new AssertionError("comando não encontrado: " + label);
     }
+
+    // ---------- readAfter() ----------
+
+    private static AdbCommands.Preset ethernet() {
+        for (AdbCommands.Preset p : AdbCommands.PRESETS) {
+            if (Adb.COMMAND.equals(p.command)) return p;
+        }
+        throw new AssertionError("comando do Ethernet não encontrado");
+    }
+
+    @Test
+    public void readAfter_semEdicao_leOValor() {
+        AdbCommands.Preset eth = ethernet();
+        assertEquals(Adb.READ_COMMAND, AdbCommands.readAfter(eth, eth.command, eth.command));
+    }
+
+    @Test
+    public void readAfter_textoEditado_naoLe() {
+        // Visto no tablet: "getprop ro.product.model" com o Ethernet selecionado terminava em
+        // "Aplicado neste aparelho. Ethernet (eth_device_conn) = null".
+        AdbCommands.Preset eth = ethernet();
+        assertNull(AdbCommands.readAfter(eth, eth.command, "getprop ro.product.model"));
+    }
+
+    @Test
+    public void readAfter_comandoSemLeitura_null() {
+        AdbCommands.Preset status = find("Kiosk: status");
+        assertNull(AdbCommands.readAfter(status, status.command, status.command));
+    }
 }
