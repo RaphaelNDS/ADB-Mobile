@@ -210,6 +210,9 @@ public final class AdbCommands {
         return new Preset(label, command, null, null, true, null);
     }
 
+    private static final java.util.regex.Pattern NO_ACTIVITIES =
+            java.util.regex.Pattern.compile("(?m)^\\s*\\*\\* no activities found to run");
+
     /**
      * Traduz falhas conhecidas na saída de um comando (o shell não devolve o código de saída,
      * então o erro só aparece no texto). Só considera falha quando a saída começa com a exceção
@@ -219,8 +222,9 @@ public final class AdbCommands {
     public static String failure(String output) {
         if (output == null) return null;
         String o = output.toLowerCase(Locale.ROOT);
-        // "Abrir app" (monkey) com pacote que não existe ou sem tela inicial.
-        if (o.trim().startsWith("** no activities found to run")) {
+        // "Abrir app" (monkey) com pacote que não existe ou sem tela inicial. Procura em qualquer
+        // linha: sem o filtro do comando pronto, o monkey imprime ~14 linhas de depuração antes.
+        if (NO_ACTIVITIES.matcher(o).find()) {
             return "O app não está instalado no aparelho ou não tem tela para abrir. Confira o "
                     + "\"Pacote do app\" (bloco 3).";
         }
