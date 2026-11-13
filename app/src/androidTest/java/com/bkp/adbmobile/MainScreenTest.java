@@ -36,25 +36,25 @@ public class MainScreenTest {
     @Test
     public void outroAparelho_trocaOsBotoesDePareamento() {
         try (ActivityScenario<MainActivity> s = ActivityScenario.launch(MainActivity.class)) {
-            onView(withId(R.id.targetLocal)).perform(click());
+            onView(withId(R.id.targetLocal)).perform(scrollTo(), click());
             s.onActivity(a -> {
                 assertEquals(View.VISIBLE, a.findViewById(R.id.pairNotification).getVisibility());
                 assertEquals(View.GONE, a.findViewById(R.id.pairQr).getVisibility());
             });
-            onView(withId(R.id.targetRemote)).perform(click());
+            onView(withId(R.id.targetRemote)).perform(scrollTo(), click());
             s.onActivity(a -> {
                 assertEquals(View.GONE, a.findViewById(R.id.pairNotification).getVisibility());
                 assertEquals(View.VISIBLE, a.findViewById(R.id.pairQr).getVisibility());
                 assertEquals(View.VISIBLE, a.findViewById(R.id.remoteBox).getVisibility());
             });
-            onView(withId(R.id.targetLocal)).perform(click());
+            onView(withId(R.id.targetLocal)).perform(scrollTo(), click());
         }
     }
 
     @Test
     public void qrCode_abreECancela() {
         try (ActivityScenario<MainActivity> s = ActivityScenario.launch(MainActivity.class)) {
-            onView(withId(R.id.targetRemote)).perform(click());
+            onView(withId(R.id.targetRemote)).perform(scrollTo(), click());
             onView(withId(R.id.pairQr)).perform(scrollTo(), click());
             onView(withContentDescription("QR code de pareamento")).inRoot(isDialog()).check(matches(isDisplayed()));
             onView(withId(android.R.id.button2)).inRoot(isDialog()).perform(click());
@@ -71,7 +71,7 @@ public class MainScreenTest {
                 // A tela volta a aceitar comandos.
                 assertTrue(a.findViewById(R.id.run).isEnabled());
             });
-            onView(withId(R.id.targetLocal)).perform(click());
+            onView(withId(R.id.targetLocal)).perform(scrollTo(), click());
         }
     }
 
