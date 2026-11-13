@@ -246,7 +246,9 @@ public final class AppInfo {
         if ("true".equals(stopped)) s.add("parado à força");
         if ("true".equals(hidden)) s.add("oculto");
         if ("true".equals(suspended)) s.add("suspenso");
-        return android.text.TextUtils.join(", ", s);
+        StringBuilder out = new StringBuilder();
+        for (String part : s) out.append(out.length() > 0 ? ", " : "").append(part);
+        return out.toString();
     }
 
     private static String find(String text, String regex) {

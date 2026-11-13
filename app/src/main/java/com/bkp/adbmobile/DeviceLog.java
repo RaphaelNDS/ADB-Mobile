@@ -84,7 +84,7 @@ final class DeviceLog {
     }
 
     /** Repassa os bytes ao arquivo e, linha a linha, conta linhas e procura crashes/ANRs. */
-    private static final class LineScanner extends FilterOutputStream {
+    static final class LineScanner extends FilterOutputStream {
         private static final int MAX_LINE = 2048; // o resto de uma linha muito longa é ignorado na busca
         final Result result = new Result();
         private final String crash;   // Java: "AndroidRuntime: Process: <pkg>, PID: ..."
