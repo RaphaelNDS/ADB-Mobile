@@ -199,7 +199,7 @@
                             android:background="?android:attr/selectableItemBackground"
                             android:padding="4dp"
                             android:text="Marcar todos"
-                            android:textColor="@color/primary"
+                            android:textColor="@color/accent"
                             android:textSize="13sp"
                             android:textStyle="bold" />
                     </LinearLayout>
@@ -569,7 +569,7 @@
                         android:background="?android:attr/selectableItemBackground"
                         android:padding="4dp"
                         android:text="Buscar"
-                        android:textColor="@color/primary"
+                        android:textColor="@color/accent"
                         android:textSize="13sp"
                         android:textStyle="bold" />
 
@@ -581,7 +581,7 @@
                         android:background="?android:attr/selectableItemBackground"
                         android:padding="4dp"
                         android:text="Compartilhar"
-                        android:textColor="@color/primary"
+                        android:textColor="@color/accent"
                         android:textSize="13sp"
                         android:textStyle="bold" />
 
@@ -592,7 +592,7 @@
                         android:background="?android:attr/selectableItemBackground"
                         android:padding="4dp"
                         android:text="Limpar"
-                        android:textColor="@color/primary"
+                        android:textColor="@color/accent"
                         android:textSize="13sp"
                         android:textStyle="bold" />
                 </LinearLayout>
