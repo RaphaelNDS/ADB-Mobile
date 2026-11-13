@@ -75,6 +75,7 @@ public class MainActivity extends Activity {
     private View remoteBox;
     private TextView pairingHelp;
     private Button notificationPairing;
+    private Button qrPairing;
     private EditText portField;
     private EditText codeField;
     private TextView status;
@@ -132,6 +133,7 @@ public class MainActivity extends Activity {
         remoteBox = findViewById(R.id.remoteBox);
         pairingHelp = findViewById(R.id.pairingHelp);
         notificationPairing = findViewById(R.id.pairNotification);
+        qrPairing = findViewById(R.id.pairQr);
         portField = findViewById(R.id.pairPort);
         codeField = findViewById(R.id.pairCode);
         status = findViewById(R.id.status);
@@ -152,7 +154,7 @@ public class MainActivity extends Activity {
         Button appInfo = findViewById(R.id.appInfo);
         Button runBatch = findViewById(R.id.runBatch);
         Button live = findViewById(R.id.liveLogcat);
-        actions = new Button[]{notificationPairing, pairManual, run, read, saveLog, installApk, pushFile,
+        actions = new Button[]{notificationPairing, qrPairing, pairManual, run, read, saveLog, installApk, pushFile,
                 pullFile, screenshot, chooseApp, appInfo, runBatch, live};
 
         devices = new DevicesPanel(this);
@@ -169,6 +171,7 @@ public class MainActivity extends Activity {
 
         notificationPairing.setOnClickListener(v -> startNotificationPairing());
         pairManual.setOnClickListener(v -> manualPairing());
+        qrPairing.setOnClickListener(v -> new QrPairing(this).open());
         run.setOnClickListener(v -> commands.confirmAndRun());
         read.setOnClickListener(v -> commands.readValue());
         runBatch.setOnClickListener(v -> commands.chooseBatch());
@@ -273,10 +276,12 @@ public class MainActivity extends Activity {
         boolean remote = isRemote();
         remoteBox.setVisibility(remote ? View.VISIBLE : View.GONE);
         notificationPairing.setVisibility(remote ? View.GONE : View.VISIBLE);
+        qrPairing.setVisibility(remote ? View.VISIBLE : View.GONE);
         if (remote) {
             pairingHelp.setText("No aparelho alvo, abra \"Depuração por Wi-Fi\" > \"Parear o dispositivo com "
                     + "um código de pareamento\" e informe abaixo a porta e o código exibidos "
-                    + "(essa porta é diferente da porta de conexão). Não é necessário para Android 10 ou anterior.");
+                    + "(essa porta é diferente da porta de conexão), ou toque em \"Parear por QR code\" e leia o "
+                    + "código em \"Parear o dispositivo com código QR\". Não é necessário para Android 10 ou anterior.");
         } else {
             pairingHelp.setText("Em Configurações > Opções do desenvolvedor, ative \"Depuração sem fio\" "
                     + "(Samsung: \"Depuração por Wi-Fi\") e toque em \"Parear dispositivo com código de "

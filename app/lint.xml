@@ -21,4 +21,9 @@
     <issue id="Overdraw" severity="ignore" />
     <!-- Layouts não usam start/end de propósito para idiomas da direita para a esquerda. -->
     <issue id="RtlEnabled" severity="ignore" />
+    <!-- "Há versão mais nova de X": muda com a data, não com o código (o mesmo commit passaria
+         hoje e falharia amanhã). Atualizações de versão são revistas à parte. -->
+    <issue id="AndroidGradlePluginVersion" severity="ignore" />
+    <issue id="GradleDependency" severity="ignore" />
+    <issue id="NewerVersionAvailable" severity="ignore" />
 </lint>

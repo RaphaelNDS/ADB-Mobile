@@ -78,7 +78,7 @@ final class CommandsPanel {
                 title.setTextSize(12);
                 title.setTypeface(Typeface.DEFAULT_BOLD);
                 title.setLetterSpacing(0.08f);
-                title.setTextColor(a.color(R.color.primary));
+                title.setTextColor(a.color(R.color.accent));
                 title.setBackgroundColor(a.color(R.color.primary_tint));
                 title.setPadding(a.dp(16), a.dp(10), a.dp(16), a.dp(6));
                 return title;

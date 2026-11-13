@@ -10,25 +10,30 @@ def keystore = new Properties()
 if (keystoreFile.exists()) keystoreFile.withInputStream { keystore.load(it) }
 
 android {
-    namespace 'com.bkp.adbmobile'
-    compileSdk 35
+    namespace = 'com.bkp.adbmobile'
+    compileSdk = 35
 
     defaultConfig {
-        applicationId 'com.bkp.adbmobile'
-        minSdk 21
-        targetSdk 35
-        versionCode 36
-        versionName '2.34'
-        testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
+        applicationId = 'com.bkp.adbmobile'
+        minSdk = 21
+        targetSdk = 35
+        versionCode = 37
+        versionName = '2.35'
+        testInstrumentationRunner = 'androidx.test.runner.AndroidJUnitRunner'
+        // Só ARM (celulares, tablets e coletores como o Zebra): sem x86/x86_64 o APK cai ~1,9 MB.
+        // Emuladores x86_64 com Android 11+ rodam o app pela tradução ARM do próprio sistema.
+        ndk {
+            abiFilters 'armeabi-v7a', 'arm64-v8a'
+        }
     }
 
     signingConfigs {
         release {
             if (keystoreFile.exists()) {
-                storeFile rootProject.file(keystore['storeFile'])
-                storePassword keystore['storePassword']
-                keyAlias keystore['keyAlias']
-                keyPassword keystore['keyPassword']
+                storeFile = rootProject.file(keystore['storeFile'])
+                storePassword = keystore['storePassword']
+                keyAlias = keystore['keyAlias']
+                keyPassword = keystore['keyPassword']
             }
         }
     }
@@ -36,16 +41,16 @@ android {
     buildTypes {
         release {
             // R8: tira o código não usado das bibliotecas (regras em proguard-rules.pro).
-            minifyEnabled true
-            shrinkResources true
+            minifyEnabled = true
+            shrinkResources = true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
-            signingConfig signingConfigs.release
+            signingConfig = signingConfigs.release
         }
     }
 
     compileOptions {
-        sourceCompatibility JavaVersion.VERSION_1_8
-        targetCompatibility JavaVersion.VERSION_1_8
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
     }
 
     packaging {
@@ -58,10 +63,10 @@ android {
 
     lint {
         // Erro do lint para o build (os avisos que não se aplicam estão em lint.xml).
-        lintConfig file('lint.xml')
-        abortOnError true
-        checkReleaseBuilds true
-        checkDependencies false
+        lintConfig = file('lint.xml')
+        abortOnError = true
+        checkReleaseBuilds = true
+        checkDependencies = false
     }
 }
 
@@ -71,6 +76,8 @@ dependencies {
     implementation 'org.conscrypt:conscrypt-android:2.5.3'
     // Geração do certificado X.509 usado pelo cliente ADB
     implementation 'org.bouncycastle:bcpkix-jdk15to18:1.81'
+    // QR code do "Parear por QR code". A 3.3.x é a última que roda no Android 5-6 sem desugaring.
+    implementation 'com.google.zxing:core:3.3.3'
 
     // Testes de unidade (JVM): JUnit e a org.json real (a do android.jar só tem stubs)
     testImplementation 'junit:junit:4.13.2'
@@ -87,4 +94,9 @@ gradle.taskGraph.whenReady { graph ->
         throw new GradleException('Falta keystore.properties na raiz do projeto (chave de release). ' +
                 'Veja o modelo em keystore.properties.example.')
     }
+}
+
+// Mostra no build cada uso de API obsoleta (em vez do aviso genérico "Some input files use...").
+tasks.withType(JavaCompile).configureEach {
+    options.compilerArgs += ['-Xlint:deprecation']
 }

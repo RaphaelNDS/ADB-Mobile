@@ -3,7 +3,6 @@ package com.bkp.adbmobile;
 import android.Manifest;
 import android.annotation.SuppressLint;
 import android.app.Notification;
-import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.app.RemoteInput;
@@ -26,6 +25,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.LinkedBlockingQueue;
+import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.NetworkInterface;
 import java.net.Socket;
@@ -73,7 +73,7 @@ public final class Adb {
         discoveryListener = new NsdManager.DiscoveryListener() {
             @Override
             public void onServiceFound(NsdServiceInfo info) {
-                nsd.resolveService(info, new NsdManager.ResolveListener() {
+                resolve(nsd, info, new NsdManager.ResolveListener() {
                     @Override
                     public void onServiceResolved(NsdServiceInfo resolved) {
                         if (isLocal(resolved)) pairingPort = resolved.getPort();
@@ -118,9 +118,24 @@ public final class Adb {
         discoveryListener = null;
     }
 
+    // resolveService e getHost ficaram obsoletos no Android 14 (trocados por registerServiceInfoCallback
+    // e getHostAddresses, que só existem do 14 em diante). Continuam funcionando no 14 e no 15 e são
+    // os únicos até o 13 (minSdk 21): ficam aqui, num lugar só.
+
+    @SuppressWarnings("deprecation")
+    private static void resolve(NsdManager nsd, NsdServiceInfo info, NsdManager.ResolveListener listener) {
+        nsd.resolveService(info, listener);
+    }
+
+    @SuppressWarnings("deprecation")
+    private static InetAddress hostOf(NsdServiceInfo info) {
+        return info.getHost();
+    }
+
     private static boolean isLocal(NsdServiceInfo info) {
         try {
-            return info.getHost() != null && NetworkInterface.getByInetAddress(info.getHost()) != null;
+            InetAddress a = hostOf(info);
+            return a != null && NetworkInterface.getByInetAddress(a) != null;
         } catch (Exception e) {
             return false;
         }
@@ -142,6 +157,78 @@ public final class Adb {
         stopPairingDiscovery(context);
     }
 
+    /**
+     * Pareamento por QR code: depois de ler o QR, o outro aparelho anuncia o serviço de pareamento
+     * com o nome que estava no código. Espera esse anúncio e devolve o endereço (IP e porta de
+     * pareamento), ou null se o tempo acabar ou {@code stopper} parar antes.
+     */
+    public static InetSocketAddress waitPairingService(Context context, final String serviceName,
+                                                       long timeoutMs, Stopper stopper) throws InterruptedException {
+        final NsdManager nsd = (NsdManager) context.getApplicationContext().getSystemService(Context.NSD_SERVICE);
+        if (nsd == null) return null;
+        final LinkedBlockingQueue<NsdServiceInfo> found = new LinkedBlockingQueue<>();
+        NsdManager.DiscoveryListener listener = new NsdManager.DiscoveryListener() {
+            @Override
+            public void onServiceFound(NsdServiceInfo info) {
+                if (serviceName.equals(info.getServiceName())) found.add(info);
+            }
+
+            @Override
+            public void onServiceLost(NsdServiceInfo info) {
+            }
+
+            @Override
+            public void onDiscoveryStarted(String serviceType) {
+            }
+
+            @Override
+            public void onDiscoveryStopped(String serviceType) {
+            }
+
+            @Override
+            public void onStartDiscoveryFailed(String serviceType, int errorCode) {
+            }
+
+            @Override
+            public void onStopDiscoveryFailed(String serviceType, int errorCode) {
+            }
+        };
+        nsd.discoverServices(PAIRING_SERVICE, NsdManager.PROTOCOL_DNS_SD, listener);
+        long end = System.currentTimeMillis() + timeoutMs;
+        try {
+            while (!stopper.isStopped() && System.currentTimeMillis() < end) {
+                // Em passos curtos, para o "Cancelar" responder logo.
+                NsdServiceInfo info = found.poll(500, TimeUnit.MILLISECONDS);
+                if (info == null) continue;
+                final CountDownLatch resolved = new CountDownLatch(1);
+                final NsdServiceInfo[] result = new NsdServiceInfo[1];
+                resolve(nsd, info, new NsdManager.ResolveListener() {
+                    @Override
+                    public void onServiceResolved(NsdServiceInfo s) {
+                        result[0] = s;
+                        resolved.countDown();
+                    }
+
+                    @Override
+                    public void onResolveFailed(NsdServiceInfo s, int errorCode) {
+                        resolved.countDown();
+                    }
+                });
+                resolved.await(5, TimeUnit.SECONDS);
+                NsdServiceInfo s = result[0];
+                if (s != null && hostOf(s) != null && s.getPort() > 0) {
+                    return new InetSocketAddress(hostOf(s), s.getPort());
+                }
+            }
+            return null;
+        } finally {
+            try {
+                nsd.stopServiceDiscovery(listener);
+            } catch (Exception ignored) {
+            }
+        }
+    }
+
     /** Pareia com outro aparelho da rede (IP e porta mostrados em "Parear com código" nele). */
     public static void pairRemote(Context context, String host, int port, String code) throws Exception {
         AdbManager manager = AdbManager.create(context);
@@ -157,14 +244,7 @@ public final class Adb {
     /** Notificação com campo de resposta para digitar o código sem sair das Configurações. */
     public static void showPairingNotification(Context context, String text, boolean withInput) {
         NotificationManager nm = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
-        Notification.Builder builder;
-        if (Build.VERSION.SDK_INT >= 26) {
-            nm.createNotificationChannel(new NotificationChannel(CHANNEL_ID, "Pareamento ADB",
-                    NotificationManager.IMPORTANCE_HIGH));
-            builder = new Notification.Builder(context, CHANNEL_ID);
-        } else {
-            builder = new Notification.Builder(context).setPriority(Notification.PRIORITY_HIGH);
-        }
+        Notification.Builder builder = Notifications.builder(context, CHANNEL_ID, "Pareamento ADB", true);
         builder.setSmallIcon(R.drawable.ic_terminal)
                 .setColor(0xFF0B3C6E)
                 .setContentTitle("ADB Mobile - pareamento")
@@ -178,8 +258,7 @@ public final class Adb {
             PendingIntent pi = PendingIntent.getBroadcast(context, 0,
                     new Intent(context, PairingReceiver.class), flags);
             RemoteInput input = new RemoteInput.Builder(KEY_CODE).setLabel("Código de pareamento").build();
-            builder.addAction(new Notification.Action.Builder(null, "Digitar código", pi)
-                    .addRemoteInput(input).build());
+            builder.addAction(Notifications.action("Digitar código", pi).addRemoteInput(input).build());
         }
         nm.notify(NOTIFICATION_ID, builder.build());
     }
@@ -396,7 +475,7 @@ public final class Adb {
                 // resolveService aceita um pedido por vez: resolve em sequência.
                 final CountDownLatch resolved = new CountDownLatch(1);
                 final NsdServiceInfo[] result = new NsdServiceInfo[1];
-                nsd.resolveService(info, new NsdManager.ResolveListener() {
+                resolve(nsd, info, new NsdManager.ResolveListener() {
                     @Override
                     public void onServiceResolved(NsdServiceInfo s) {
                         result[0] = s;
@@ -410,7 +489,7 @@ public final class Adb {
                 });
                 resolved.await(3, TimeUnit.SECONDS);
                 NsdServiceInfo s = result[0];
-                if (s != null && s.getHost() != null && host.equals(s.getHost().getHostAddress())
+                if (s != null && hostOf(s) != null && host.equals(hostOf(s).getHostAddress())
                         && !ports.contains(s.getPort())) {
                     ports.add(s.getPort());
                 }
