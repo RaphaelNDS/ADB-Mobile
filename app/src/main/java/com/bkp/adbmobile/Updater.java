@@ -132,9 +132,41 @@ final class Updater {
         new AlertDialog.Builder(a)
                 .setTitle("Versão " + r.version + " disponível")
                 .setMessage("Instalada: " + current + "\n\n" + (notes.isEmpty() ? "" : notes + "\n\n")
-                        + "O Android pede confirmação antes de instalar. O pareamento e os comandos salvos continuam.")
-                .setPositiveButton("Baixar e instalar", (d, w) -> download(r))
+                        + "O Android pede confirmação antes de instalar e, ao terminar, fecha o app: é só abrir "
+                        + "de novo. O pareamento e os comandos salvos continuam.")
+                .setPositiveButton("Baixar e instalar", (d, w) -> {
+                    if (canInstall()) download(r);
+                    else askInstallPermission();
+                })
                 .setNegativeButton("Depois", null)
+                .show();
+    }
+
+    /** Android 8+: o app precisa da permissão "Instalar apps desconhecidos" (dada uma vez). */
+    private boolean canInstall() {
+        return Build.VERSION.SDK_INT < 26 || a.getPackageManager().canRequestPackageInstalls();
+    }
+
+    /**
+     * Pede a permissão antes de baixar: se o Android pedir no meio da instalação, ela é
+     * descartada e a pessoa teria de começar de novo sem entender por quê.
+     */
+    private void askInstallPermission() {
+        if (Build.VERSION.SDK_INT < 26) return; // antes do Android 8 não há essa permissão
+        new AlertDialog.Builder(a)
+                .setTitle("Permitir a atualização")
+                .setMessage("Na próxima tela, ative \"Permitir desta fonte\" para o ADB Mobile. Depois volte "
+                        + "e toque de novo em \"Verificar atualização\" (cartão Configuração). Só é preciso uma vez.")
+                .setPositiveButton("Abrir configuração", (d, w) -> {
+                    try {
+                        a.startActivity(new Intent(android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                                android.net.Uri.parse("package:" + a.getPackageName())));
+                    } catch (Exception e) {
+                        a.setStatus(MainActivity.Status.ERROR, "Abra Configurações > Apps > ADB Mobile > "
+                                + "Instalar apps desconhecidos e permita.");
+                    }
+                })
+                .setNegativeButton("Cancelar", null)
                 .show();
     }
 
