@@ -9,6 +9,7 @@
     <!-- Log automático: serviço em primeiro plano que observa o app aberto no aparelho alvo. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <!-- Retoma o log automático ao ligar o aparelho. -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <!-- Concedida pelo próprio app via ADB na primeira conexão; usada para religar a depuração sem fio. -->
@@ -54,9 +55,15 @@
                 <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
             </intent-filter>
         </receiver>
+        <!-- Android 14+: specialUse (sem limite de horas e pode voltar no boot). Android 10-13:
+             dataSync, que nessas versões não tem limite. -->
         <service
             android:name=".LogMonitorService"
             android:exported="false"
-            android:foregroundServiceType="dataSync" />
+            android:foregroundServiceType="dataSync|specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Monitora pelo ADB o app aberto em um aparelho e salva o log quando ele abre ou reinicia." />
+        </service>
     </application>
 </manifest>

@@ -146,7 +146,12 @@ public class LogMonitorService extends Service {
     private boolean enterForeground() {
         Notification n = notification("Iniciando o monitoramento...");
         try {
-            if (Build.VERSION.SDK_INT >= 29) {
+            if (Build.VERSION.SDK_INT >= 34) {
+                // specialUse, não dataSync: no Android 15 o dataSync tem limite de 6 horas por dia e
+                // não pode começar no BOOT_COMPLETED; o monitoramento fica ligado o dia todo e volta
+                // sozinho no boot.
+                startForeground(NOTIFICATION_ID, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE);
+            } else if (Build.VERSION.SDK_INT >= 29) {
                 startForeground(NOTIFICATION_ID, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC);
             } else {
                 startForeground(NOTIFICATION_ID, n);
