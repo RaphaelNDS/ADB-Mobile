@@ -1,7 +1,9 @@
 package com.bkp.adbmobile;
 
 import android.Manifest;
+import android.annotation.SuppressLint;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.net.Uri;
 import android.os.Build;
 import android.provider.DocumentsContract;
@@ -76,6 +78,8 @@ final class MonitorPanel {
         a.openPicker(intent, MainActivity.REQUEST_LOG_FOLDER);
     }
 
+    // As flags vêm do seletor de pasta (só as de leitura/escrita do Intent passam no &).
+    @SuppressLint("WrongConstant")
     void onFolderChosen(Uri tree, Intent data) {
         if (tree == null) {
             a.setStatus(Status.INFO, "Escolha da pasta cancelada.");
@@ -140,7 +144,7 @@ final class MonitorPanel {
         int port = t[0] != null ? t[0].port : 0;
         a.prefs.edit().putString("monitorPackage", pkg).apply();
         if (Build.VERSION.SDK_INT >= 33
-                && a.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != 0) {
+                && a.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
             // Sem a permissão o monitoramento funciona, só não aparece a notificação.
             a.requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, 2);
         }
