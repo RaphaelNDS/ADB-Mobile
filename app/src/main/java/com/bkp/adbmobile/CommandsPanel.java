@@ -274,6 +274,29 @@ final class CommandsPanel {
         if (failure != null) throw new IOException(failure);
     }
 
+    /**
+     * Comando do campo para agendar: {nome para o registro, comando}, ou null (com aviso).
+     * Comandos que pedem confirmação (apagar, desinstalar, Device Owner...) não rodam sozinhos.
+     */
+    String[] currentForSchedule() {
+        final String cmd = commandField.getText().toString().trim();
+        if (cmd.isEmpty()) {
+            a.setStatus(Status.ERROR, "Escolha ou digite o comando a agendar.");
+            return null;
+        }
+        if (cmd.contains(AdbCommands.PACKAGE)) {
+            a.setStatus(Status.ERROR, "Informe o pacote do app (em \"Log automático\") ou edite o comando.");
+            return null;
+        }
+        AdbCommands.Preset preset = selectedPreset();
+        if (preset.confirm) {
+            a.setStatus(Status.ERROR, "\"" + preset.label + "\" pede confirmação a cada vez e não pode ser agendado.");
+            return null;
+        }
+        String label = AdbCommands.isUnedited(preset, fill(preset.command), cmd) ? preset.label : cmd;
+        return new String[]{label, cmd};
+    }
+
     void confirmAndRun() {
         final String cmd = commandField.getText().toString().trim();
         if (cmd.isEmpty()) {

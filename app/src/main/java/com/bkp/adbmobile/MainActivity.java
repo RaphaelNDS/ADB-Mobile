@@ -65,6 +65,7 @@ public class MainActivity extends Activity {
     static final int REQUEST_EXPORT_CONFIG = 16;
     static final int REQUEST_IMPORT_CONFIG = 17;
     static final int REQUEST_KIOSK_APK = 18;
+    static final int REQUEST_SAVE_INVENTORY = 19;
 
     /** Motivo de falha de um aparelho que ainda não pareou com o app. */
     static final String NEEDS_PAIRING = "Exige pareamento. Conclua a etapa 1.";
@@ -97,6 +98,11 @@ public class MainActivity extends Activity {
     private ConfigBackup config;
     private Updater updater;
     private KioskSetup kiosk;
+    private Inventory inventory;
+    private Schedule schedule;
+    /** A tela está na frente (o "Ver tela" pausa as capturas quando não está). */
+    volatile boolean visible;
+    private ScreenMirror mirror;
     private LogHistory history;
     private final Handler main = new Handler(Looper.getMainLooper());
     /** Grava o Registro um pouco depois da última linha (várias linhas seguidas = uma gravação). */
@@ -158,8 +164,11 @@ public class MainActivity extends Activity {
         Button runBatch = findViewById(R.id.runBatch);
         Button live = findViewById(R.id.liveLogcat);
         Button kioskSetup = findViewById(R.id.kioskSetup);
+        Button inventoryButton = findViewById(R.id.inventory);
+        Button mirrorButton = findViewById(R.id.mirror);
         actions = new Button[]{notificationPairing, qrPairing, pairManual, run, read, saveLog, installApk, pushFile,
-                pullFile, screenshot, chooseApp, appInfo, runBatch, live, kioskSetup};
+                pullFile, screenshot, chooseApp, appInfo, runBatch, live, kioskSetup, inventoryButton,
+                mirrorButton};
 
         devices = new DevicesPanel(this);
         runner = new DeviceRunner(this);
@@ -174,6 +183,9 @@ public class MainActivity extends Activity {
         config = new ConfigBackup(this);
         updater = new Updater(this);
         kiosk = new KioskSetup(this);
+        inventory = new Inventory(this);
+        schedule = new Schedule(this);
+        mirror = new ScreenMirror(this);
 
         notificationPairing.setOnClickListener(v -> startNotificationPairing());
         pairManual.setOnClickListener(v -> manualPairing());
@@ -183,6 +195,8 @@ public class MainActivity extends Activity {
         runBatch.setOnClickListener(v -> commands.chooseBatch());
         live.setOnClickListener(v -> liveLogcat.open());
         kioskSetup.setOnClickListener(v -> kiosk.choose());
+        inventoryButton.setOnClickListener(v -> inventory.run());
+        mirrorButton.setOnClickListener(v -> mirror.open());
         saveLog.setOnClickListener(v -> capture.chooseLogFile());
         installApk.setOnClickListener(v -> transfers.chooseApk());
         pushFile.setOnClickListener(v -> transfers.choosePushFile());
@@ -220,12 +234,18 @@ public class MainActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
+        visible = true;
         monitor.onResume();
+        // Linhas geradas com a tela fechada (comando agendado) e as que chegarem com ela aberta.
+        PendingLog.listener = this::appendPending;
+        appendPending();
     }
 
     @Override
     protected void onPause() {
         super.onPause();
+        visible = false;
+        PendingLog.listener = null;
         // Grava já: o Android pode encerrar o app em segundo plano sem aviso.
         main.removeCallbacks(saveHistory);
         // Na hora, não em segundo plano: a tela recriada lê o arquivo logo em seguida e perdia
@@ -270,6 +290,9 @@ public class MainActivity extends Activity {
                 break;
             case REQUEST_KIOSK_APK:
                 kiosk.onApkChosen(uri);
+                break;
+            case REQUEST_SAVE_INVENTORY:
+                inventory.onCsvFileChosen(uri);
                 break;
             case REQUEST_SAVE_LOG:
                 capture.onLogFileChosen(uri);
@@ -541,6 +564,10 @@ public class MainActivity extends Activity {
     /** Linha no registro, de qualquer thread. */
     void log(String s) {
         runOnUiThread(() -> append(s));
+    }
+
+    private void appendPending() {
+        for (String line : PendingLog.drain(this)) append(line);
     }
 
     /** Linha no registro, no thread da tela. */

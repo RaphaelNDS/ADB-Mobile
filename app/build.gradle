@@ -17,8 +17,8 @@ android {
         applicationId = 'com.bkp.adbmobile'
         minSdk = 21
         targetSdk = 35
-        versionCode = 38
-        versionName = '2.36'
+        versionCode = 39
+        versionName = '2.37'
         testInstrumentationRunner = 'androidx.test.runner.AndroidJUnitRunner'
         // Só ARM (celulares, tablets e coletores como o Zebra): sem x86/x86_64 o APK cai ~1,9 MB.
         // Emuladores x86_64 com Android 11+ rodam o app pela tradução ARM do próprio sistema.
