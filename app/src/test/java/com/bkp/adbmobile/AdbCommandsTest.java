@@ -110,6 +110,22 @@ public class AdbCommandsTest {
     }
 
     @Test
+    public void failure_monkeySemFiltro() {
+        // Saída crua do monkey (comando editado sem o grep), como sai no tablet, com \r\n.
+        String raw = "  bash arg: -p\r\n  bash arg: com.nao.existe\r\nargs: [-p, com.nao.existe, 1]\r\n"
+                + " arg: \"-p\"\r\ndata=\"com.nao.existe\"\r\n** No activities found to run, monkey aborted.\r\n";
+        String msg = AdbCommands.failure(raw);
+        assertNotNull(msg);
+        assertTrue(msg, msg.contains("não está instalado"));
+    }
+
+    @Test
+    public void failure_textoNoMeioDaLinha_naoEhFalha() {
+        // Um log que só cita a frase (sem começar a linha com ela) não é falha do comando.
+        assertNull(AdbCommands.failure("11-13 14:00 I/x: saiu \"** No activities found to run\"\n"));
+    }
+
+    @Test
     public void failure_abrirAppComSucesso_naoEhFalha() {
         // Com o filtro, o sucesso não imprime nada.
         assertNull(AdbCommands.failure(""));
