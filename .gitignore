@@ -26,3 +26,8 @@ build/
 # Sistema
 .DS_Store
 Thumbs.db
+
+# Chave de assinatura do release (senha); o modelo é keystore.properties.example
+/keystore.properties
+*.jks
+*.keystore
