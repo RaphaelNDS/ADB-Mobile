@@ -286,14 +286,20 @@ public class LogMonitorService extends Service {
         if (problems != null) {
             // Marca no nome do arquivo para achar fácil entre os 10 guardados.
             String flagged = name.replace(".txt", "_" + (log.crashes > 0 ? "CRASH" : "ANR") + ".txt");
-            if (DeviceLog.rename(getContentResolver(), file, flagged)) name = flagged;
-            alert(pkg + ": " + problems + " desde o log anterior. Arquivo: " + name);
+            String tag = log.crashes > 0 ? "_CRASH" : "_ANR";
+            // Sem a marca, este log conta no limite de 10 e pode ir para "antigos" como um log comum.
+            String unflagged = DeviceLog.rename(getContentResolver(), file, flagged) ? null
+                    : " (não deu para marcar " + tag + " no nome; ele pode ir para \"" + DeviceLog.ARCHIVE_FOLDER
+                    + "\" como um log comum)";
+            if (unflagged == null) name = flagged;
+            alert(pkg + ": " + problems + " desde o log anterior. Arquivo: " + name
+                    + (unflagged != null ? unflagged : ""));
         }
 
-        int moved = DeviceLog.archiveOld(getContentResolver(), folder, DeviceLog.filePrefix(pkg), MAX_LOGS);
+        String archived = DeviceLog.archiveOld(getContentResolver(), folder, DeviceLog.filePrefix(pkg), MAX_LOGS)
+                .summary();
         event("Log salvo (" + log.lines + " linhas" + (problems != null ? ", " + problems : "") + "): " + name
-                + (moved > 0 ? " (" + moved + " antigo(s) movido(s) para a pasta \"" + DeviceLog.ARCHIVE_FOLDER
-                + "\")" : ""));
+                + (archived.isEmpty() ? "" : " (" + archived + ")"));
     }
 
     /** Atualiza a notificação e avisa a tela (se estiver aberta). */

@@ -851,13 +851,25 @@ public final class Adb {
         Thread.sleep(3000);
     }
 
-    /** Concede WRITE_SECURE_SETTINGS ao próprio app (precisa de conexão ADB ativa). */
-    public static void grantSelfSecureSettings(Context context) {
-        if (hasSecureSettings(context)) return;
+    /**
+     * Concede WRITE_SECURE_SETTINGS ao próprio app (precisa de conexão ADB ativa).
+     *
+     * @return null se o app tem a permissão; senão, o aviso para o Registro (sem ela o app não
+     *         consegue religar a Depuração sem fio sozinho)
+     */
+    public static String grantSelfSecureSettings(Context context) {
+        if (hasSecureSettings(context)) return null;
+        String reason;
         try {
-            shell(context, "pm grant " + context.getPackageName() + " "
-                    + Manifest.permission.WRITE_SECURE_SETTINGS);
-        } catch (Exception ignored) {
+            // O pm grant pode falhar sem lançar exceção (só escreve o erro): a saída é o motivo.
+            reason = shell(context, "pm grant " + context.getPackageName() + " "
+                    + Manifest.permission.WRITE_SECURE_SETTINGS + " 2>&1");
+        } catch (Exception e) {
+            reason = describe(e);
         }
+        if (hasSecureSettings(context)) return null;
+        return "Aviso: o app não recebeu a permissão para religar a \"Depuração sem fio\" sozinho"
+                + (reason == null || reason.isEmpty() ? "." : " (" + reason.trim() + ").")
+                + " Se ela desligar, ative de novo em Opções do desenvolvedor.";
     }
 }

@@ -55,4 +55,33 @@ public class DeviceLogTest {
         names.add(DeviceLog.ARCHIVE_FOLDER);
         assertTrue(DeviceLog.toArchive(names, KIOSK, 10).isEmpty());
     }
+
+    @Test
+    public void resumo_nadaAMover_vazio() {
+        assertEquals("", new DeviceLog.Archive().summary());
+    }
+
+    @Test
+    public void resumo_movidos() {
+        DeviceLog.Archive a = new DeviceLog.Archive();
+        a.moved = 2;
+        assertEquals("2 antigo(s) movido(s) para a pasta \"antigos\"", a.summary());
+    }
+
+    @Test
+    public void resumo_naoMovidos_mostraOMotivo() {
+        DeviceLog.Archive a = new DeviceLog.Archive();
+        a.moved = 1;
+        a.notMoved = 2;
+        a.problem = "a pasta não permitiu mover";
+        assertEquals("1 antigo(s) movido(s) para a pasta \"antigos\"; 2 antigo(s) NÃO movido(s) para "
+                + "\"antigos\": a pasta não permitiu mover (continuam na pasta)", a.summary());
+    }
+
+    @Test
+    public void resumo_falhaAoListar_avisa() {
+        DeviceLog.Archive a = new DeviceLog.Archive();
+        a.problem = "não foi possível listar a pasta dos logs";
+        assertEquals("não deu para conferir os logs antigos: não foi possível listar a pasta dos logs", a.summary());
+    }
 }
