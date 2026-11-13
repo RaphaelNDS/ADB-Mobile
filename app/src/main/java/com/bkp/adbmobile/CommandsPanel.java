@@ -355,7 +355,8 @@ final class CommandsPanel {
                 checkOutput(out);
                 a.logOutput("", out);
                 String value = read == null ? null : Adb.shell(a, read);
-                Adb.grantSelfSecureSettings(a);
+                String warning = Adb.grantSelfSecureSettings(a);
+                if (warning != null) a.log(warning);
                 a.finish(Status.SUCCESS, read == null ? "Executado neste aparelho."
                         : "Aplicado neste aparelho. " + name + " = " + value);
             } catch (AdbPairingRequiredException e) {

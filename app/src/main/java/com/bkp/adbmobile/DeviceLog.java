@@ -203,24 +203,55 @@ final class DeviceLog {
         return new ArrayList<>(logs.subList(0, logs.size() - keep));
     }
 
+    /** Resultado da arrumação: quantos foram movidos e, se algum ficou, por quê. */
+    static final class Archive {
+        int moved;
+        /** Logs que deveriam ir para "antigos" mas continuam na pasta principal. */
+        int notMoved;
+        /** Motivo de não ter movido (o primeiro que aconteceu), ou null. */
+        String problem;
+
+        /** Trecho para a mensagem do log salvo; "" se não houve nada a mover. */
+        String summary() {
+            if (moved == 0 && notMoved == 0) {
+                return problem != null ? "não deu para conferir os logs antigos: " + problem : "";
+            }
+            String text = "";
+            if (moved > 0) text = moved + " antigo(s) movido(s) para a pasta \"" + ARCHIVE_FOLDER + "\"";
+            if (notMoved > 0) {
+                if (!text.isEmpty()) text += "; ";
+                text += notMoved + " antigo(s) NÃO movido(s) para \"" + ARCHIVE_FOLDER + "\""
+                        + (problem != null ? ": " + problem : "") + " (continuam na pasta)";
+            }
+            return text;
+        }
+
+        private Archive fail(int count, String why) {
+            notMoved += count;
+            if (problem == null) problem = why;
+            return this;
+        }
+    }
+
     /**
      * Mantém na pasta só os {@code keep} logs mais recentes de {@code prefix} (sem contar os de
      * CRASH/ANR) e MOVE os mais antigos para a subpasta {@link #ARCHIVE_FOLDER}. Nada é apagado:
-     * se não der para mover (Android 6 ou anterior, ou pasta que não permite), o arquivo fica onde está.
-     *
-     * @return quantos arquivos foram movidos
+     * se não der para mover (Android 6 ou anterior, ou pasta que não permite), o arquivo fica onde
+     * está e o motivo volta em {@link Archive#problem}.
      */
-    static int archiveOld(ContentResolver resolver, Uri tree, String prefix, int keep) {
-        if (Build.VERSION.SDK_INT < 24) return 0; // moveDocument não existe antes do Android 7
+    static Archive archiveOld(ContentResolver resolver, Uri tree, String prefix, int keep) {
+        Archive result = new Archive();
         String rootId = DocumentsContract.getTreeDocumentId(tree);
         Uri root = DocumentsContract.buildDocumentUriUsingTree(tree, rootId);
         List<String[]> children = listChildren(resolver, tree, rootId); // {nome, documentId, mime}
-        if (children == null) return 0;
+        if (children == null) return result.fail(0, "não foi possível listar a pasta dos logs");
 
         List<String> names = new ArrayList<>();
         for (String[] child : children) names.add(child[0]);
         List<String> old = toArchive(names, prefix, keep);
-        if (old.isEmpty()) return 0;
+        if (old.isEmpty()) return result;
+        // moveDocument não existe antes do Android 7.
+        if (Build.VERSION.SDK_INT < 24) return result.fail(old.size(), "o Android deste aparelho não permite mover arquivos");
 
         Uri archive = null;
         for (String[] child : children) {
@@ -234,21 +265,25 @@ final class DeviceLog {
                         DocumentsContract.Document.MIME_TYPE_DIR, ARCHIVE_FOLDER);
             }
         } catch (Exception e) {
-            return 0;
+            return result.fail(old.size(), "não foi possível criar a subpasta (" + Adb.describe(e) + ")");
         }
-        if (archive == null) return 0;
+        if (archive == null) return result.fail(old.size(), "não foi possível criar a subpasta");
 
-        int moved = 0;
         for (String[] child : children) {
             if (!old.contains(child[0])) continue;
             try {
                 if (DocumentsContract.moveDocument(resolver,
-                        DocumentsContract.buildDocumentUriUsingTree(tree, child[1]), root, archive) != null) moved++;
-            } catch (Exception ignored) {
+                        DocumentsContract.buildDocumentUriUsingTree(tree, child[1]), root, archive) != null) {
+                    result.moved++;
+                } else {
+                    result.fail(1, "a pasta não permitiu mover");
+                }
+            } catch (Exception e) {
                 // Fica na pasta principal; melhor sobrar arquivo do que perder log.
+                result.fail(1, Adb.describe(e));
             }
         }
-        return moved;
+        return result;
     }
 
     /** Arquivos e pastas dentro de {@code parentId}: {nome, documentId, mime}; null se falhar. */
