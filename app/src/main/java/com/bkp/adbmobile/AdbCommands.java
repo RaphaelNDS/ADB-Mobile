@@ -127,9 +127,22 @@ public final class AdbCommands {
      * digitado ou alterado, porque aí é a única referência do que rodou.
      */
     public static String logLine(Preset preset, String presetText, String cmd) {
-        boolean named = preset != null && !preset.isHeader() && !preset.command.isEmpty()
+        return "$ " + (isUnedited(preset, presetText, cmd) ? preset.label : cmd);
+    }
+
+    /** O texto do campo é o do comando pronto/salvo, sem edição ({@code presetText} já com o pacote). */
+    static boolean isUnedited(Preset preset, String presetText, String cmd) {
+        return preset != null && !preset.isHeader() && !preset.command.isEmpty()
                 && presetText != null && cmd.trim().equals(presetText.trim());
-        return "$ " + (named ? preset.label : cmd);
+    }
+
+    /**
+     * Leitura a fazer depois de executar {@code cmd}: a do comando pronto só quando o texto não
+     * foi editado. Com o texto editado, o valor lido não teria relação com o que rodou (ex.: um
+     * "getprop" com "Ativar Ethernet" selecionado mostrava "Ethernet (eth_device_conn) = null").
+     */
+    public static String readAfter(Preset preset, String presetText, String cmd) {
+        return isUnedited(preset, presetText, cmd) ? preset.read : null;
     }
 
     /**

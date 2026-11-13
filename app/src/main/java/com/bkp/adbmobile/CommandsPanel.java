@@ -311,7 +311,7 @@ final class CommandsPanel {
      * resultante. Falhas conhecidas na saída (ex.: erros do dpm) viram erro em português.
      */
     private void runCommand(final String cmd, AdbCommands.Preset preset) {
-        final String read = preset.read;
+        final String read = AdbCommands.readAfter(preset, fill(preset.command), cmd);
         final String name = preset.readName;
         if (a.isRemote()) {
             final List<Devices.Device> targets = a.devices.selected();
