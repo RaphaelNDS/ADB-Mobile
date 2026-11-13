@@ -25,8 +25,13 @@
         android:label="ADB Mobile"
         android:icon="@mipmap/ic_launcher"
         android:theme="@style/AppTheme">
+        <!-- Girar a tela não recria a Activity: uma operação em andamento ficava presa à tela antiga
+             (resultado sumia do Registro e os botões voltavam a funcionar no meio dela). Não há
+             recursos por orientação; mudar a menor largura (tela dividida) ainda recria, para
+             trocar entre o layout de celular e o de tablet. -->
         <activity
             android:name=".MainActivity"
+            android:configChanges="orientation|screenSize|keyboard|keyboardHidden|navigation"
             android:windowSoftInputMode="adjustResize"
             android:exported="true">
             <intent-filter>
