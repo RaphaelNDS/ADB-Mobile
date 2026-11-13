@@ -34,7 +34,8 @@ class FakeShell implements Adb.Shell {
 
     @Override
     public String install(File apk, Adb.Progress progress) {
-        throw new UnsupportedOperationException();
+        commands.add("install " + apk.getName());
+        return "Success";
     }
 
     @Override
