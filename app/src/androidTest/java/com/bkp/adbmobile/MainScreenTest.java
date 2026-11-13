@@ -117,6 +117,9 @@ public class MainScreenTest {
         try (ActivityScenario<MainActivity> s = ActivityScenario.launch(MainActivity.class)) {
             onView(withId(R.id.kioskSetup)).perform(scrollTo()).check(matches(withText("Preparar Kiosk (instalar + Device Owner)")));
             onView(withId(R.id.checkUpdate)).perform(scrollTo()).check(matches(isDisplayed()));
+            onView(withId(R.id.inventory)).perform(scrollTo()).check(matches(isDisplayed()));
+            onView(withId(R.id.schedule)).perform(scrollTo()).check(matches(withText("Agendar comando diário")));
+            onView(withId(R.id.mirror)).perform(scrollTo()).check(matches(isDisplayed()));
         }
     }
 }
