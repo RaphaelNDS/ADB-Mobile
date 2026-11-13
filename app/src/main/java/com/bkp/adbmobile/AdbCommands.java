@@ -130,6 +130,23 @@ public final class AdbCommands {
         return "$ " + (isUnedited(preset, presetText, cmd) ? preset.label : cmd);
     }
 
+    /**
+     * Comandos escolhidos para o lote, na ordem da lista (que é a ordem de execução); chaves que
+     * não existem mais (comando salvo excluído) são ignoradas.
+     */
+    public static java.util.List<Preset> batchSteps(java.util.List<Preset> list, java.util.Collection<String> keys) {
+        java.util.List<Preset> steps = new java.util.ArrayList<>();
+        for (Preset p : list) {
+            if (!p.isHeader() && !p.command.isEmpty() && keys.contains(p.key())) steps.add(p);
+        }
+        return steps;
+    }
+
+    /** "[2/3] Tela: desligar após 30 min" (linha do Registro de cada passo do lote). */
+    public static String batchStepLine(int index, int total, Preset step) {
+        return "[" + (index + 1) + "/" + total + "] " + step.label;
+    }
+
     /** O texto do campo é o do comando pronto/salvo, sem edição ({@code presetText} já com o pacote). */
     static boolean isUnedited(Preset preset, String presetText, String cmd) {
         return preset != null && !preset.isHeader() && !preset.command.isEmpty()

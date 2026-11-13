@@ -375,6 +375,12 @@
                     android:text="Executar comando" />
 
                 <Button
+                    android:id="@+id/runBatch"
+                    style="@style/ButtonOutline"
+                    android:layout_marginTop="10dp"
+                    android:text="Executar vários comandos" />
+
+                <Button
                     android:id="@+id/read"
                     style="@style/ButtonOutline"
                     android:layout_marginTop="10dp"
@@ -385,6 +391,12 @@
                     style="@style/ButtonOutline"
                     android:layout_marginTop="10dp"
                     android:text="Gerar log do aparelho (.txt)" />
+
+                <Button
+                    android:id="@+id/liveLogcat"
+                    style="@style/ButtonOutline"
+                    android:layout_marginTop="10dp"
+                    android:text="Logcat ao vivo" />
 
                 <Button
                     android:id="@+id/installApk"
@@ -496,18 +508,82 @@
                     android:text="Iniciar monitoramento" />
             </LinearLayout>
 
+            <!-- Configuração: exportar/importar -->
+            <LinearLayout style="@style/Card">
+
+                <TextView
+                    style="@style/Overline"
+                    android:layout_marginBottom="4dp"
+                    android:text="Configuração" />
+
+                <TextView
+                    style="@style/Body"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginBottom="10dp"
+                    android:text="Leva os comandos salvos, os aparelhos salvos e o pacote do Log automático para outro aparelho (arquivo .json)." />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal">
+
+                    <Button
+                        android:id="@+id/exportConfig"
+                        style="@style/ButtonOutline"
+                        android:layout_width="0dp"
+                        android:layout_height="match_parent"
+                        android:layout_weight="1"
+                        android:layout_marginEnd="5dp"
+                        android:text="Exportar" />
+
+                    <Button
+                        android:id="@+id/importConfig"
+                        style="@style/ButtonOutline"
+                        android:layout_width="0dp"
+                        android:layout_height="match_parent"
+                        android:layout_weight="1"
+                        android:layout_marginStart="5dp"
+                        android:text="Importar" />
+                </LinearLayout>
+            </LinearLayout>
+
             <!-- Registro -->
             <LinearLayout style="@style/Card">
 
+                <TextView
+                    style="@style/Overline"
+                    android:text="Registro de atividades" />
+
+                <!-- Links numa linha própria: ao lado do título, no celular, espremiam o título. -->
                 <LinearLayout
                     style="@style/CardHeader"
-                    android:layout_marginBottom="8dp">
+                    android:layout_marginBottom="6dp"
+                    android:gravity="end|center_vertical">
 
                     <TextView
-                        style="@style/Overline"
-                        android:layout_width="0dp"
-                        android:layout_weight="1"
-                        android:text="Registro de atividades" />
+                        android:id="@+id/searchLog"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginEnd="8dp"
+                        android:background="?android:attr/selectableItemBackground"
+                        android:padding="4dp"
+                        android:text="Buscar"
+                        android:textColor="@color/primary"
+                        android:textSize="13sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:id="@+id/shareLog"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginEnd="8dp"
+                        android:background="?android:attr/selectableItemBackground"
+                        android:padding="4dp"
+                        android:text="Compartilhar"
+                        android:textColor="@color/primary"
+                        android:textSize="13sp"
+                        android:textStyle="bold" />
 
                     <TextView
                         android:id="@+id/clearLog"

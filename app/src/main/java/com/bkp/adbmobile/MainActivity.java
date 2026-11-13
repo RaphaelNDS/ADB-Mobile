@@ -9,6 +9,8 @@ import android.database.Cursor;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.provider.OpenableColumns;
 import android.provider.Settings;
 import android.view.View;
@@ -41,8 +43,10 @@ import io.github.muntashirakon.adb.AdbPairingRequiredException;
  * status e registro. Cada parte da tela fica na sua classe:
  * {@link CommandsPanel} (comando e execução), {@link DevicesPanel} (aparelhos salvos),
  * {@link FileTransfers} (instalar APK e enviar arquivo), {@link RemoteBrowser} (baixar arquivo),
- * {@link DeviceCapture} (log e captura de tela), {@link AppScreens} (apps do aparelho) e
- * {@link MonitorPanel} (log automático).
+ * {@link DeviceCapture} (log e captura de tela), {@link AppScreens} (apps do aparelho),
+ * {@link MonitorPanel} (log automático), {@link LiveLogcat} (logcat ao vivo) e
+ * {@link ConfigBackup} (exportar/importar). O Registro é guardado entre aberturas
+ * ({@link LogHistory}).
  */
 public class MainActivity extends Activity {
 
@@ -54,6 +58,8 @@ public class MainActivity extends Activity {
     static final int REQUEST_PUSH_FILE = 13;
     static final int REQUEST_PULL_FILE = 14;
     static final int REQUEST_SAVE_SCREENSHOT = 15;
+    static final int REQUEST_EXPORT_CONFIG = 16;
+    static final int REQUEST_IMPORT_CONFIG = 17;
 
     /** Motivo de falha de um aparelho que ainda não pareou com o app. */
     static final String NEEDS_PAIRING = "Exige pareamento. Conclua a etapa 1.";
@@ -81,6 +87,12 @@ public class MainActivity extends Activity {
     private RemoteBrowser browser;
     private DeviceCapture capture;
     private AppScreens apps;
+    private LiveLogcat liveLogcat;
+    private ConfigBackup config;
+    private LogHistory history;
+    private final Handler main = new Handler(Looper.getMainLooper());
+    /** Grava o Registro um pouco depois da última linha (várias linhas seguidas = uma gravação). */
+    private final Runnable saveHistory = this::saveHistoryNow;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -98,6 +110,9 @@ public class MainActivity extends Activity {
         codeField = findViewById(R.id.pairCode);
         status = findViewById(R.id.status);
         log = findViewById(R.id.log);
+        history = new LogHistory(getFilesDir());
+        String previous = history.load();
+        if (!previous.isEmpty()) log.setText(previous);
 
         Button pairManual = findViewById(R.id.pairManual);
         Button run = findViewById(R.id.run);
@@ -109,8 +124,10 @@ public class MainActivity extends Activity {
         Button screenshot = findViewById(R.id.screenshot);
         Button chooseApp = findViewById(R.id.chooseApp);
         Button appInfo = findViewById(R.id.appInfo);
+        Button runBatch = findViewById(R.id.runBatch);
+        Button live = findViewById(R.id.liveLogcat);
         actions = new Button[]{notificationPairing, pairManual, run, read, saveLog, installApk, pushFile,
-                pullFile, screenshot, chooseApp, appInfo};
+                pullFile, screenshot, chooseApp, appInfo, runBatch, live};
 
         devices = new DevicesPanel(this);
         runner = new DeviceRunner(this);
@@ -121,11 +138,15 @@ public class MainActivity extends Activity {
         // O monitor vem antes dos comandos: a lista de comandos usa o pacote dele.
         monitor = new MonitorPanel(this);
         commands = new CommandsPanel(this, read);
+        liveLogcat = new LiveLogcat(this);
+        config = new ConfigBackup(this);
 
         notificationPairing.setOnClickListener(v -> startNotificationPairing());
         pairManual.setOnClickListener(v -> manualPairing());
         run.setOnClickListener(v -> commands.confirmAndRun());
         read.setOnClickListener(v -> commands.readValue());
+        runBatch.setOnClickListener(v -> commands.chooseBatch());
+        live.setOnClickListener(v -> liveLogcat.open());
         saveLog.setOnClickListener(v -> capture.chooseLogFile());
         installApk.setOnClickListener(v -> transfers.chooseApk());
         pushFile.setOnClickListener(v -> transfers.choosePushFile());
@@ -133,7 +154,13 @@ public class MainActivity extends Activity {
         screenshot.setOnClickListener(v -> capture.captureScreen());
         chooseApp.setOnClickListener(v -> apps.chooseApp());
         appInfo.setOnClickListener(v -> apps.showAppInfo(monitor.packageName()));
-        findViewById(R.id.clearLog).setOnClickListener(v -> log.setText(""));
+        findViewById(R.id.clearLog).setOnClickListener(v -> {
+            log.setText("");
+            main.removeCallbacks(saveHistory);
+            history.clear();
+        });
+        findViewById(R.id.searchLog).setOnClickListener(v -> searchLog());
+        findViewById(R.id.shareLog).setOnClickListener(v -> shareLog());
 
         RadioGroup target = findViewById(R.id.target);
         target.check(prefs.getBoolean("remote", false) ? R.id.targetRemote : R.id.targetLocal);
@@ -144,14 +171,32 @@ public class MainActivity extends Activity {
         updateMode();
 
         setStatus(Status.INFO, "Pronto para executar.");
-        append("Android " + Build.VERSION.RELEASE + " (API " + Build.VERSION.SDK_INT + ") - "
-                + Build.MANUFACTURER + " " + Build.MODEL);
+        // Só quando o app abre de fato: a tela recriada (ex.: tela dividida, fonte) já tem essas linhas.
+        if (savedInstanceState == null) {
+            append("----- App aberto em " + new SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).format(new Date())
+                    + " (v" + versionName() + ") -----");
+            append("Android " + Build.VERSION.RELEASE + " (API " + Build.VERSION.SDK_INT + ") - "
+                    + Build.MANUFACTURER + " " + Build.MODEL);
+        }
     }
 
     @Override
     protected void onResume() {
         super.onResume();
         monitor.onResume();
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        // Grava já: o Android pode encerrar o app em segundo plano sem aviso.
+        main.removeCallbacks(saveHistory);
+        // Na hora, não em segundo plano: a tela recriada lê o arquivo logo em seguida e perdia
+        // as últimas linhas se a gravação ainda não tivesse terminado.
+        String text = log.getText().toString();
+        if (!text.isEmpty() && !history.save(text)) {
+            append("Aviso: não foi possível guardar o Registro para a próxima abertura.");
+        }
     }
 
     @Override
@@ -179,6 +224,12 @@ public class MainActivity extends Activity {
                 break;
             case REQUEST_SAVE_SCREENSHOT:
                 capture.saveScreenshot(uri);
+                break;
+            case REQUEST_EXPORT_CONFIG:
+                config.onExportFileChosen(uri);
+                break;
+            case REQUEST_IMPORT_CONFIG:
+                config.onImportFileChosen(uri);
                 break;
             case REQUEST_SAVE_LOG:
                 capture.onLogFileChosen(uri);
@@ -454,6 +505,91 @@ public class MainActivity extends Activity {
     void append(String s) {
         if (log.length() > 0) log.append("\n");
         log.append(clock.format(new Date()) + "  " + s);
+        // A tela também não cresce sem limite (o arquivo guarda o mesmo trecho).
+        if (log.length() > 2 * LogHistory.MAX_CHARS) {
+            log.setText(LogHistory.trim(log.getText().toString(), LogHistory.MAX_CHARS));
+        }
+        main.removeCallbacks(saveHistory);
+        main.postDelayed(saveHistory, 1000);
+    }
+
+    // ---------- Histórico do Registro ----------
+
+    private void saveHistoryNow() {
+        if (history == null) return;
+        final String text = log.getText().toString();
+        if (text.isEmpty()) return;
+        background(() -> {
+            if (!history.save(text)) log("Aviso: não foi possível guardar o Registro para a próxima abertura.");
+        });
+    }
+
+    /** Janela com as linhas do Registro que contêm o texto digitado (atualiza ao digitar). */
+    private void searchLog() {
+        final String all = log.getText().toString();
+        android.widget.LinearLayout box = new android.widget.LinearLayout(this);
+        box.setOrientation(android.widget.LinearLayout.VERTICAL);
+        box.setPadding(dp(16), dp(8), dp(16), 0);
+        final EditText query = new EditText(this);
+        query.setHint("Texto a buscar (ex.: ERRO, Kiosk, 172.16)");
+        query.setSingleLine(true);
+        box.addView(query);
+        final TextView count = new TextView(this);
+        count.setTextSize(12);
+        count.setTextColor(color(R.color.text_secondary));
+        box.addView(count);
+        android.widget.ScrollView scroll = new android.widget.ScrollView(this);
+        final TextView result = new TextView(this);
+        result.setTypeface(android.graphics.Typeface.MONOSPACE);
+        result.setTextSize(11);
+        result.setTextIsSelectable(true);
+        result.setTextColor(color(R.color.console_text));
+        result.setBackgroundResource(R.drawable.bg_console);
+        result.setPadding(dp(8), dp(8), dp(8), dp(8));
+        scroll.addView(result);
+        box.addView(scroll, new android.widget.LinearLayout.LayoutParams(
+                android.widget.LinearLayout.LayoutParams.MATCH_PARENT,
+                (int) (getResources().getDisplayMetrics().heightPixels * 0.45)));
+        query.addTextChangedListener(new android.text.TextWatcher() {
+            @Override
+            public void beforeTextChanged(CharSequence s, int st, int c, int af) {
+            }
+
+            @Override
+            public void onTextChanged(CharSequence s, int st, int b, int c) {
+                java.util.List<String> found = LogHistory.search(all, s.toString());
+                result.setText(android.text.TextUtils.join("\n", found));
+                count.setText(s.toString().trim().isEmpty() ? ""
+                        : found.size() + (found.size() == 1 ? " linha encontrada" : " linhas encontradas"));
+            }
+
+            @Override
+            public void afterTextChanged(android.text.Editable s) {
+            }
+        });
+        new AlertDialog.Builder(this)
+                .setTitle("Buscar no Registro")
+                .setView(box)
+                .setPositiveButton("Fechar", null)
+                .show();
+    }
+
+    /** Envia o Registro como texto (e-mail, WhatsApp, Drive...). */
+    private void shareLog() {
+        String text = log.getText().toString();
+        if (text.isEmpty()) {
+            setStatus(Status.INFO, "O Registro está vazio.");
+            return;
+        }
+        Intent send = new Intent(Intent.ACTION_SEND);
+        send.setType("text/plain");
+        send.putExtra(Intent.EXTRA_SUBJECT, "Registro do ADB Mobile - " + Build.MODEL);
+        send.putExtra(Intent.EXTRA_TEXT, text);
+        try {
+            startActivity(Intent.createChooser(send, "Compartilhar Registro"));
+        } catch (Exception e) {
+            setStatus(Status.ERROR, "Nenhum app para compartilhar texto neste aparelho.");
+        }
     }
 
     void background(Runnable r) {
