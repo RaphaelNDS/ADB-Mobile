@@ -99,6 +99,7 @@ public class MainActivity extends Activity {
     private Updater updater;
     private KioskSetup kiosk;
     private Inventory inventory;
+    private Schedule schedule;
     private LogHistory history;
     private final Handler main = new Handler(Looper.getMainLooper());
     /** Grava o Registro um pouco depois da última linha (várias linhas seguidas = uma gravação). */
@@ -178,6 +179,7 @@ public class MainActivity extends Activity {
         updater = new Updater(this);
         kiosk = new KioskSetup(this);
         inventory = new Inventory(this);
+        schedule = new Schedule(this);
 
         notificationPairing.setOnClickListener(v -> startNotificationPairing());
         pairManual.setOnClickListener(v -> manualPairing());
@@ -226,11 +228,15 @@ public class MainActivity extends Activity {
     protected void onResume() {
         super.onResume();
         monitor.onResume();
+        // Linhas geradas com a tela fechada (comando agendado) e as que chegarem com ela aberta.
+        PendingLog.listener = this::appendPending;
+        appendPending();
     }
 
     @Override
     protected void onPause() {
         super.onPause();
+        PendingLog.listener = null;
         // Grava já: o Android pode encerrar o app em segundo plano sem aviso.
         main.removeCallbacks(saveHistory);
         // Na hora, não em segundo plano: a tela recriada lê o arquivo logo em seguida e perdia
@@ -549,6 +555,10 @@ public class MainActivity extends Activity {
     /** Linha no registro, de qualquer thread. */
     void log(String s) {
         runOnUiThread(() -> append(s));
+    }
+
+    private void appendPending() {
+        for (String line : PendingLog.drain(this)) append(line);
     }
 
     /** Linha no registro, no thread da tela. */

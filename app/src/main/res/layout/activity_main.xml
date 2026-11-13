@@ -423,6 +423,12 @@
                     android:layout_marginTop="10dp"
                     android:text="Inventário dos aparelhos (Kiosk, bateria, espaço)" />
 
+                <Button
+                    android:id="@+id/schedule"
+                    style="@style/ButtonOutline"
+                    android:layout_marginTop="10dp"
+                    android:text="Agendar comando diário" />
+
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
