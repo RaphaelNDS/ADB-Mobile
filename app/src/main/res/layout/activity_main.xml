@@ -411,6 +411,12 @@
                     android:layout_marginTop="10dp"
                     android:text="Instalar APK (.apk)" />
 
+                <Button
+                    android:id="@+id/kioskSetup"
+                    style="@style/ButtonOutline"
+                    android:layout_marginTop="10dp"
+                    android:text="Preparar Kiosk (instalar + Device Owner)" />
+
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
@@ -553,6 +559,12 @@
                         android:layout_marginStart="5dp"
                         android:text="Importar" />
                 </LinearLayout>
+
+                <Button
+                    android:id="@+id/checkUpdate"
+                    style="@style/ButtonOutline"
+                    android:layout_marginTop="10dp"
+                    android:text="Verificar atualização" />
             </LinearLayout>
 
             <!-- Registro -->

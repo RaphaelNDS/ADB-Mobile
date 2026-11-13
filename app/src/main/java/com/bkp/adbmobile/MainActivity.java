@@ -64,6 +64,7 @@ public class MainActivity extends Activity {
     static final int REQUEST_SAVE_SCREENSHOT = 15;
     static final int REQUEST_EXPORT_CONFIG = 16;
     static final int REQUEST_IMPORT_CONFIG = 17;
+    static final int REQUEST_KIOSK_APK = 18;
 
     /** Motivo de falha de um aparelho que ainda não pareou com o app. */
     static final String NEEDS_PAIRING = "Exige pareamento. Conclua a etapa 1.";
@@ -94,6 +95,8 @@ public class MainActivity extends Activity {
     private AppScreens apps;
     private LiveLogcat liveLogcat;
     private ConfigBackup config;
+    private Updater updater;
+    private KioskSetup kiosk;
     private LogHistory history;
     private final Handler main = new Handler(Looper.getMainLooper());
     /** Grava o Registro um pouco depois da última linha (várias linhas seguidas = uma gravação). */
@@ -154,8 +157,9 @@ public class MainActivity extends Activity {
         Button appInfo = findViewById(R.id.appInfo);
         Button runBatch = findViewById(R.id.runBatch);
         Button live = findViewById(R.id.liveLogcat);
+        Button kioskSetup = findViewById(R.id.kioskSetup);
         actions = new Button[]{notificationPairing, qrPairing, pairManual, run, read, saveLog, installApk, pushFile,
-                pullFile, screenshot, chooseApp, appInfo, runBatch, live};
+                pullFile, screenshot, chooseApp, appInfo, runBatch, live, kioskSetup};
 
         devices = new DevicesPanel(this);
         runner = new DeviceRunner(this);
@@ -168,6 +172,8 @@ public class MainActivity extends Activity {
         commands = new CommandsPanel(this, read);
         liveLogcat = new LiveLogcat(this);
         config = new ConfigBackup(this);
+        updater = new Updater(this);
+        kiosk = new KioskSetup(this);
 
         notificationPairing.setOnClickListener(v -> startNotificationPairing());
         pairManual.setOnClickListener(v -> manualPairing());
@@ -176,6 +182,7 @@ public class MainActivity extends Activity {
         read.setOnClickListener(v -> commands.readValue());
         runBatch.setOnClickListener(v -> commands.chooseBatch());
         live.setOnClickListener(v -> liveLogcat.open());
+        kioskSetup.setOnClickListener(v -> kiosk.choose());
         saveLog.setOnClickListener(v -> capture.chooseLogFile());
         installApk.setOnClickListener(v -> transfers.chooseApk());
         pushFile.setOnClickListener(v -> transfers.choosePushFile());
@@ -206,6 +213,7 @@ public class MainActivity extends Activity {
                     + " (v" + versionName() + ") -----");
             append("Android " + Build.VERSION.RELEASE + " (API " + Build.VERSION.SDK_INT + ") - "
                     + Build.MANUFACTURER + " " + Build.MODEL);
+            updater.checkOnStart();
         }
     }
 
@@ -259,6 +267,9 @@ public class MainActivity extends Activity {
                 break;
             case REQUEST_IMPORT_CONFIG:
                 config.onImportFileChosen(uri);
+                break;
+            case REQUEST_KIOSK_APK:
+                kiosk.onApkChosen(uri);
                 break;
             case REQUEST_SAVE_LOG:
                 capture.onLogFileChosen(uri);
@@ -637,7 +648,7 @@ public class MainActivity extends Activity {
         return (int) (value * getResources().getDisplayMetrics().density);
     }
 
-    private String versionName() {
+    String versionName() {
         try {
             return getPackageManager().getPackageInfo(getPackageName(), 0).versionName;
         } catch (Exception e) {

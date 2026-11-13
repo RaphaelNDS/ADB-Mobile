@@ -13,7 +13,7 @@ public final class AdbCommands {
     public static final String PACKAGE = "{pacote}";
 
     /** Componente administrador do app Kiosk (Device Owner). */
-    private static final String KIOSK_ADMIN =
+    static final String KIOSK_ADMIN =
             "br.com.backupautomacao.kiosk/br.com.backupautomacao.kiosk.admin.AdminReceiver";
 
     /**
@@ -24,12 +24,12 @@ public final class AdbCommands {
      *     admin=ComponentInfo{pacote/classe}
      * </pre>
      */
-    private static final String DEVICE_OWNER_READ = "o=$(dumpsys device_policy | grep -A2 'Device Owner:'"
+    static final String DEVICE_OWNER_READ = "o=$(dumpsys device_policy | grep -A2 'Device Owner:'"
             + " | grep -o 'ComponentInfo{[^}]*}' | head -n 1 | sed 's/ComponentInfo{\\(.*\\)}/\\1/');"
             + " echo ${o:-nenhum}";
 
     /** Pacote do app Kiosk (o mesmo de {@link #KIOSK_ADMIN}). */
-    private static final String KIOSK_PACKAGE = "br.com.backupautomacao.kiosk";
+    static final String KIOSK_PACKAGE = "br.com.backupautomacao.kiosk";
 
     /**
      * Resumo do Kiosk em quatro linhas: versão, se é o Device Owner, se está em primeiro plano e
