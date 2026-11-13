@@ -3,6 +3,7 @@ package com.bkp.adbmobile;
 import android.content.ContentResolver;
 import android.database.Cursor;
 import android.net.Uri;
+import android.os.Build;
 import android.provider.DocumentsContract;
 
 import java.io.BufferedOutputStream;
@@ -177,42 +178,97 @@ final class DeviceLog {
         return file;
     }
 
+    /** Subpasta (dentro da pasta dos logs) para onde vão os logs automáticos mais antigos. */
+    static final String ARCHIVE_FOLDER = "antigos";
+
+    /** Log marcado com crash ou ANR no nome: nunca sai da pasta principal sozinho. */
+    static boolean isFlagged(String name) {
+        return name.endsWith("_CRASH.txt") || name.endsWith("_ANR.txt");
+    }
+
     /**
-     * Mantém na pasta só os {@code keep} arquivos mais recentes que começam com {@code prefix}
-     * (o nome tem data/hora, então a ordem alfabética é a cronológica).
-     *
-     * @return quantos arquivos foram apagados
+     * Quais logs de {@code prefix} saem da pasta principal para manter só os {@code keep} mais
+     * recentes. Os marcados com CRASH/ANR não contam nem saem. O nome tem data/hora, então a
+     * ordem alfabética é a cronológica. Devolve os nomes, do mais antigo para o mais novo.
      */
-    static int prune(ContentResolver resolver, Uri tree, String prefix, int keep) {
-        Uri children = DocumentsContract.buildChildDocumentsUriUsingTree(tree,
-                DocumentsContract.getTreeDocumentId(tree));
-        List<String[]> logs = new ArrayList<>(); // {nome, documentId}
-        Cursor c = null;
+    static List<String> toArchive(List<String> names, String prefix, int keep) {
+        List<String> logs = new ArrayList<>();
+        for (String name : names) {
+            if (name != null && name.startsWith(prefix) && name.endsWith(".txt") && !isFlagged(name)) {
+                logs.add(name);
+            }
+        }
+        Collections.sort(logs);
+        if (logs.size() <= keep) return new ArrayList<>();
+        return new ArrayList<>(logs.subList(0, logs.size() - keep));
+    }
+
+    /**
+     * Mantém na pasta só os {@code keep} logs mais recentes de {@code prefix} (sem contar os de
+     * CRASH/ANR) e MOVE os mais antigos para a subpasta {@link #ARCHIVE_FOLDER}. Nada é apagado:
+     * se não der para mover (Android 6 ou anterior, ou pasta que não permite), o arquivo fica onde está.
+     *
+     * @return quantos arquivos foram movidos
+     */
+    static int archiveOld(ContentResolver resolver, Uri tree, String prefix, int keep) {
+        if (Build.VERSION.SDK_INT < 24) return 0; // moveDocument não existe antes do Android 7
+        String rootId = DocumentsContract.getTreeDocumentId(tree);
+        Uri root = DocumentsContract.buildDocumentUriUsingTree(tree, rootId);
+        List<String[]> children = listChildren(resolver, tree, rootId); // {nome, documentId, mime}
+        if (children == null) return 0;
+
+        List<String> names = new ArrayList<>();
+        for (String[] child : children) names.add(child[0]);
+        List<String> old = toArchive(names, prefix, keep);
+        if (old.isEmpty()) return 0;
+
+        Uri archive = null;
+        for (String[] child : children) {
+            if (ARCHIVE_FOLDER.equals(child[0]) && DocumentsContract.Document.MIME_TYPE_DIR.equals(child[2])) {
+                archive = DocumentsContract.buildDocumentUriUsingTree(tree, child[1]);
+            }
+        }
         try {
-            c = resolver.query(children, new String[]{DocumentsContract.Document.COLUMN_DISPLAY_NAME,
-                    DocumentsContract.Document.COLUMN_DOCUMENT_ID}, null, null, null);
-            while (c != null && c.moveToNext()) {
-                String name = c.getString(0);
-                if (name != null && name.startsWith(prefix) && name.endsWith(".txt")) {
-                    logs.add(new String[]{name, c.getString(1)});
-                }
+            if (archive == null) {
+                archive = DocumentsContract.createDocument(resolver, root,
+                        DocumentsContract.Document.MIME_TYPE_DIR, ARCHIVE_FOLDER);
             }
         } catch (Exception e) {
             return 0;
+        }
+        if (archive == null) return 0;
+
+        int moved = 0;
+        for (String[] child : children) {
+            if (!old.contains(child[0])) continue;
+            try {
+                if (DocumentsContract.moveDocument(resolver,
+                        DocumentsContract.buildDocumentUriUsingTree(tree, child[1]), root, archive) != null) moved++;
+            } catch (Exception ignored) {
+                // Fica na pasta principal; melhor sobrar arquivo do que perder log.
+            }
+        }
+        return moved;
+    }
+
+    /** Arquivos e pastas dentro de {@code parentId}: {nome, documentId, mime}; null se falhar. */
+    private static List<String[]> listChildren(ContentResolver resolver, Uri tree, String parentId) {
+        Uri uri = DocumentsContract.buildChildDocumentsUriUsingTree(tree, parentId);
+        List<String[]> list = new ArrayList<>();
+        Cursor c = null;
+        try {
+            c = resolver.query(uri, new String[]{DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+                    DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+                    DocumentsContract.Document.COLUMN_MIME_TYPE}, null, null, null);
+            while (c != null && c.moveToNext()) {
+                list.add(new String[]{c.getString(0), c.getString(1), c.getString(2)});
+            }
+        } catch (Exception e) {
+            return null;
         } finally {
             if (c != null) c.close();
         }
-        if (logs.size() <= keep) return 0;
-        Collections.sort(logs, (a, b) -> a[0].compareTo(b[0]));
-        int deleted = 0;
-        for (int i = 0; i < logs.size() - keep; i++) {
-            try {
-                if (DocumentsContract.deleteDocument(resolver,
-                        DocumentsContract.buildDocumentUriUsingTree(tree, logs.get(i)[1]))) deleted++;
-            } catch (Exception ignored) {
-            }
-        }
-        return deleted;
+        return list;
     }
 
     /** Prefixo dos arquivos de log de {@code part} (ver fileName). */
