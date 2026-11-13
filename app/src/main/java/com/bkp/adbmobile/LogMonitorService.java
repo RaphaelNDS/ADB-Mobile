@@ -1,7 +1,6 @@
 package com.bkp.adbmobile;
 
 import android.app.Notification;
-import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.app.Service;
@@ -323,15 +322,7 @@ public class LogMonitorService extends Service {
     /** Notificação de destaque (som/pop-up) para crash ou ANR do app monitorado. */
     private void alert(String text) {
         NotificationManager nm = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
-        Notification.Builder builder;
-        if (Build.VERSION.SDK_INT >= 26) {
-            nm.createNotificationChannel(new NotificationChannel(ALERT_CHANNEL_ID, "Crashes do app monitorado",
-                    NotificationManager.IMPORTANCE_HIGH));
-            builder = new Notification.Builder(this, ALERT_CHANNEL_ID);
-        } else {
-            builder = new Notification.Builder(this).setPriority(Notification.PRIORITY_HIGH)
-                    .setDefaults(Notification.DEFAULT_ALL);
-        }
+        Notification.Builder builder = Notifications.builder(this, ALERT_CHANNEL_ID, "Crashes do app monitorado", true);
         int immutable = Build.VERSION.SDK_INT >= 23 ? PendingIntent.FLAG_IMMUTABLE : 0;
         builder.setSmallIcon(R.drawable.ic_terminal)
                 .setColor(0xFFB3261E)
@@ -345,15 +336,7 @@ public class LogMonitorService extends Service {
     }
 
     private Notification notification(String text) {
-        NotificationManager nm = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
-        Notification.Builder builder;
-        if (Build.VERSION.SDK_INT >= 26) {
-            nm.createNotificationChannel(new NotificationChannel(CHANNEL_ID, "Log automático",
-                    NotificationManager.IMPORTANCE_LOW));
-            builder = new Notification.Builder(this, CHANNEL_ID);
-        } else {
-            builder = new Notification.Builder(this);
-        }
+        Notification.Builder builder = Notifications.builder(this, CHANNEL_ID, "Log automático", false);
         int immutable = Build.VERSION.SDK_INT >= 23 ? PendingIntent.FLAG_IMMUTABLE : 0;
         PendingIntent open = PendingIntent.getActivity(this, 0,
                 new Intent(this, MainActivity.class), immutable);
@@ -366,7 +349,7 @@ public class LogMonitorService extends Service {
                 .setStyle(new Notification.BigTextStyle().bigText(text))
                 .setOngoing(true)
                 .setContentIntent(open)
-                .addAction(new Notification.Action.Builder(0, "Parar", stop).build());
+                .addAction(Notifications.action("Parar", stop).build());
         return builder.build();
     }
 }

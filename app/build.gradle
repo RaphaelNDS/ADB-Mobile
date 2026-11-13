@@ -10,25 +10,25 @@ def keystore = new Properties()
 if (keystoreFile.exists()) keystoreFile.withInputStream { keystore.load(it) }
 
 android {
-    namespace 'com.bkp.adbmobile'
-    compileSdk 35
+    namespace = 'com.bkp.adbmobile'
+    compileSdk = 35
 
     defaultConfig {
-        applicationId 'com.bkp.adbmobile'
-        minSdk 21
-        targetSdk 35
-        versionCode 36
-        versionName '2.34'
-        testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
+        applicationId = 'com.bkp.adbmobile'
+        minSdk = 21
+        targetSdk = 35
+        versionCode = 36
+        versionName = '2.34'
+        testInstrumentationRunner = 'androidx.test.runner.AndroidJUnitRunner'
     }
 
     signingConfigs {
         release {
             if (keystoreFile.exists()) {
-                storeFile rootProject.file(keystore['storeFile'])
-                storePassword keystore['storePassword']
-                keyAlias keystore['keyAlias']
-                keyPassword keystore['keyPassword']
+                storeFile = rootProject.file(keystore['storeFile'])
+                storePassword = keystore['storePassword']
+                keyAlias = keystore['keyAlias']
+                keyPassword = keystore['keyPassword']
             }
         }
     }
@@ -36,16 +36,16 @@ android {
     buildTypes {
         release {
             // R8: tira o código não usado das bibliotecas (regras em proguard-rules.pro).
-            minifyEnabled true
-            shrinkResources true
+            minifyEnabled = true
+            shrinkResources = true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
-            signingConfig signingConfigs.release
+            signingConfig = signingConfigs.release
         }
     }
 
     compileOptions {
-        sourceCompatibility JavaVersion.VERSION_1_8
-        targetCompatibility JavaVersion.VERSION_1_8
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
     }
 
     packaging {
@@ -58,10 +58,10 @@ android {
 
     lint {
         // Erro do lint para o build (os avisos que não se aplicam estão em lint.xml).
-        lintConfig file('lint.xml')
-        abortOnError true
-        checkReleaseBuilds true
-        checkDependencies false
+        lintConfig = file('lint.xml')
+        abortOnError = true
+        checkReleaseBuilds = true
+        checkDependencies = false
     }
 }
 
@@ -87,4 +87,9 @@ gradle.taskGraph.whenReady { graph ->
         throw new GradleException('Falta keystore.properties na raiz do projeto (chave de release). ' +
                 'Veja o modelo em keystore.properties.example.')
     }
+}
+
+// Mostra no build cada uso de API obsoleta (em vez do aviso genérico "Some input files use...").
+tasks.withType(JavaCompile).configureEach {
+    options.compilerArgs += ['-Xlint:deprecation']
 }
