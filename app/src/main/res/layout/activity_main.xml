@@ -417,6 +417,12 @@
                     android:layout_marginTop="10dp"
                     android:text="Preparar Kiosk (instalar + Device Owner)" />
 
+                <Button
+                    android:id="@+id/inventory"
+                    style="@style/ButtonOutline"
+                    android:layout_marginTop="10dp"
+                    android:text="Inventário dos aparelhos (Kiosk, bateria, espaço)" />
+
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
