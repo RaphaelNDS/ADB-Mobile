@@ -459,6 +459,12 @@
                     style="@style/ButtonOutline"
                     android:layout_marginTop="10dp"
                     android:text="Capturar tela" />
+
+                <Button
+                    android:id="@+id/mirror"
+                    style="@style/ButtonOutline"
+                    android:layout_marginTop="10dp"
+                    android:text="Ver tela do aparelho (com toque)" />
             </LinearLayout>
 
             <!-- 3. Log automático -->
