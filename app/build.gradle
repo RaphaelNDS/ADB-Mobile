@@ -2,6 +2,13 @@ plugins {
     id 'com.android.application'
 }
 
+// Chave de assinatura do release: keystore.properties e adb-mobile-release.jks na raiz do projeto,
+// os dois fora do git (o repositório é público). Sem eles o APK de release NÃO é gerado: assinar
+// com outra chave impediria atualizar o app já instalado.
+def keystoreFile = rootProject.file('keystore.properties')
+def keystore = new Properties()
+if (keystoreFile.exists()) keystoreFile.withInputStream { keystore.load(it) }
+
 android {
     namespace 'com.bkp.adbmobile'
     compileSdk 35
@@ -15,10 +22,21 @@ android {
         testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
     }
 
+    signingConfigs {
+        release {
+            if (keystoreFile.exists()) {
+                storeFile rootProject.file(keystore['storeFile'])
+                storePassword keystore['storePassword']
+                keyAlias keystore['keyAlias']
+                keyPassword keystore['keyPassword']
+            }
+        }
+    }
+
     buildTypes {
         release {
             minifyEnabled false
-            signingConfig signingConfigs.debug
+            signingConfig signingConfigs.release
         }
     }
 
@@ -53,4 +71,12 @@ dependencies {
     androidTestImplementation 'androidx.test:core:1.6.1'
     androidTestImplementation 'androidx.test:runner:1.6.2'
     androidTestImplementation 'androidx.test.ext:junit:1.2.1'
+}
+
+// Falha cedo e com explicação se faltar a chave (em vez de gerar um APK sem assinatura).
+gradle.taskGraph.whenReady { graph ->
+    if (!keystoreFile.exists() && graph.allTasks.any { it.name == 'packageRelease' }) {
+        throw new GradleException('Falta keystore.properties na raiz do projeto (chave de release). ' +
+                'Veja o modelo em keystore.properties.example.')
+    }
 }
