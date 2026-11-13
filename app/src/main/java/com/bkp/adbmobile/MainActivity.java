@@ -7,6 +7,7 @@ import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.content.SharedPreferences;
 import android.database.Cursor;
+import android.graphics.Insets;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
@@ -15,6 +16,8 @@ import android.os.Looper;
 import android.provider.OpenableColumns;
 import android.provider.Settings;
 import android.view.View;
+import android.view.ViewGroup;
+import android.view.WindowInsets;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.RadioButton;
@@ -95,10 +98,32 @@ public class MainActivity extends Activity {
     /** Grava o Registro um pouco depois da última linha (várias linhas seguidas = uma gravação). */
     private final Runnable saveHistory = this::saveHistoryNow;
 
+    /**
+     * Android 15+ desenha a tela atrás das barras do sistema (edge-to-edge obrigatório no
+     * targetSdk 35) e o adjustResize deixa de encolher a tela para o teclado. A barra do app ganha
+     * a altura da barra de status em cima (a cor dela continua por trás do relógio), e o resto
+     * da tela se afasta da barra de navegação e do teclado.
+     */
+    private void fitSystemBars() {
+        if (Build.VERSION.SDK_INT < 35) return;
+        final ViewGroup root = (ViewGroup) ((ViewGroup) findViewById(android.R.id.content)).getChildAt(0);
+        final View header = root.getChildAt(0);
+        final int headerTop = header.getPaddingTop();
+        root.setOnApplyWindowInsetsListener((v, insets) -> {
+            Insets bars = insets.getInsets(WindowInsets.Type.systemBars() | WindowInsets.Type.displayCutout());
+            Insets ime = insets.getInsets(WindowInsets.Type.ime());
+            header.setPadding(header.getPaddingLeft(), headerTop + bars.top, header.getPaddingRight(),
+                    header.getPaddingBottom());
+            v.setPadding(bars.left, 0, bars.right, Math.max(bars.bottom, ime.bottom));
+            return WindowInsets.CONSUMED;
+        });
+    }
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
+        fitSystemBars();
         prefs = getSharedPreferences("alvo", MODE_PRIVATE);
 
         ((TextView) findViewById(R.id.version)).setText("v" + versionName());
