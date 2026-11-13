@@ -137,6 +137,12 @@ final class DevicesPanel {
         return new Devices.Device("", host, port, false);
     }
 
+    /** Preenche IP e porta (porta <= 0 = deixa em branco) depois do pareamento por QR code. */
+    void fillForm(String host, int port) {
+        hostField.setText(host);
+        connectPortField.setText(port > 0 ? String.valueOf(port) : "");
+    }
+
     /** Adiciona o aparelho do formulário ou, se o IP já está na lista, atualiza nome e porta. */
     private void saveDevice() {
         Devices.Device t = formTarget();

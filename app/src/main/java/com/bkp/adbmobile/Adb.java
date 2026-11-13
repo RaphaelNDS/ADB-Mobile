@@ -157,6 +157,78 @@ public final class Adb {
         stopPairingDiscovery(context);
     }
 
+    /**
+     * Pareamento por QR code: depois de ler o QR, o outro aparelho anuncia o serviço de pareamento
+     * com o nome que estava no código. Espera esse anúncio e devolve o endereço (IP e porta de
+     * pareamento), ou null se o tempo acabar ou {@code stopper} parar antes.
+     */
+    public static InetSocketAddress waitPairingService(Context context, final String serviceName,
+                                                       long timeoutMs, Stopper stopper) throws InterruptedException {
+        final NsdManager nsd = (NsdManager) context.getApplicationContext().getSystemService(Context.NSD_SERVICE);
+        if (nsd == null) return null;
+        final LinkedBlockingQueue<NsdServiceInfo> found = new LinkedBlockingQueue<>();
+        NsdManager.DiscoveryListener listener = new NsdManager.DiscoveryListener() {
+            @Override
+            public void onServiceFound(NsdServiceInfo info) {
+                if (serviceName.equals(info.getServiceName())) found.add(info);
+            }
+
+            @Override
+            public void onServiceLost(NsdServiceInfo info) {
+            }
+
+            @Override
+            public void onDiscoveryStarted(String serviceType) {
+            }
+
+            @Override
+            public void onDiscoveryStopped(String serviceType) {
+            }
+
+            @Override
+            public void onStartDiscoveryFailed(String serviceType, int errorCode) {
+            }
+
+            @Override
+            public void onStopDiscoveryFailed(String serviceType, int errorCode) {
+            }
+        };
+        nsd.discoverServices(PAIRING_SERVICE, NsdManager.PROTOCOL_DNS_SD, listener);
+        long end = System.currentTimeMillis() + timeoutMs;
+        try {
+            while (!stopper.isStopped() && System.currentTimeMillis() < end) {
+                // Em passos curtos, para o "Cancelar" responder logo.
+                NsdServiceInfo info = found.poll(500, TimeUnit.MILLISECONDS);
+                if (info == null) continue;
+                final CountDownLatch resolved = new CountDownLatch(1);
+                final NsdServiceInfo[] result = new NsdServiceInfo[1];
+                resolve(nsd, info, new NsdManager.ResolveListener() {
+                    @Override
+                    public void onServiceResolved(NsdServiceInfo s) {
+                        result[0] = s;
+                        resolved.countDown();
+                    }
+
+                    @Override
+                    public void onResolveFailed(NsdServiceInfo s, int errorCode) {
+                        resolved.countDown();
+                    }
+                });
+                resolved.await(5, TimeUnit.SECONDS);
+                NsdServiceInfo s = result[0];
+                if (s != null && hostOf(s) != null && s.getPort() > 0) {
+                    return new InetSocketAddress(hostOf(s), s.getPort());
+                }
+            }
+            return null;
+        } finally {
+            try {
+                nsd.stopServiceDiscovery(listener);
+            } catch (Exception ignored) {
+            }
+        }
+    }
+
     /** Pareia com outro aparelho da rede (IP e porta mostrados em "Parear com código" nele). */
     public static void pairRemote(Context context, String host, int port, String code) throws Exception {
         AdbManager manager = AdbManager.create(context);

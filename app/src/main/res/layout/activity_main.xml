@@ -289,6 +289,13 @@
                     android:layout_marginTop="14dp"
                     android:text="Parear via notificação" />
 
+                <Button
+                    android:id="@+id/pairQr"
+                    style="@style/ButtonOutline"
+                    android:layout_marginTop="14dp"
+                    android:text="Parear por QR code"
+                    android:visibility="gone" />
+
                 <!-- Alinhados pela base: se um rótulo quebrar (celular com fonte grande), os campos
                      continuam na mesma altura. -->
                 <LinearLayout
