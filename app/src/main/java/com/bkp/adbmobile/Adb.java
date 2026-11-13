@@ -734,7 +734,7 @@ public final class Adb {
                 + q + "; else echo X; fi";
     }
 
-    private static long remoteSize(String out, String remotePath) throws IOException {
+    static long remoteSize(String out, String remotePath) throws IOException {
         String s = out.trim();
         if (!s.matches("\\d+")) {
             throw new IOException("Arquivo não encontrado ou sem permissão de leitura: " + remotePath);
@@ -831,7 +831,7 @@ public final class Adb {
     }
 
     /** "Success" do pm; senão lança o motivo (ex.: INSTALL_FAILED_UPDATE_INCOMPATIBLE). */
-    private static String installResult(String out) throws IOException {
+    static String installResult(String out) throws IOException {
         if (out.contains("Success")) return out;
         Matcher m = Pattern.compile("Failure \\[([^\\]]+)\\]").matcher(out);
         String reason = m.find() ? m.group(1) : out.trim();
@@ -839,7 +839,7 @@ public final class Adb {
     }
 
     /** Explica os erros de instalação mais comuns. */
-    private static String installHint(String reason) {
+    static String installHint(String reason) {
         if (reason.contains("UPDATE_INCOMPATIBLE"))
             return reason + " (assinatura diferente da versão instalada: desinstale o app no aparelho antes)";
         if (reason.contains("VERSION_DOWNGRADE"))
